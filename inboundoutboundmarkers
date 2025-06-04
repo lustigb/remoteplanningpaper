@@ -1,0 +1,412 @@
+clear all
+load('rec01_BehavElectrDataLFP.mat')
+%%
+figure;
+fig = gcf;
+ax = axes('Parent', fig);
+max_k = size(Laps.lapID,1);
+
+if ~exist('markersdone','var')
+    markersdone = zeros(max_k,1);
+end
+clear inbound outbound
+loopnum = 1;
+while loopnum <= max_k
+    
+    testholdx = Track.xPix(Laps.startLfpInd(loopnum):Laps.endLfpInd(loopnum));
+    testholdy = Track.yPix(Laps.startLfpInd(loopnum):Laps.endLfpInd(loopnum));
+    mazesect = Track.mazeSect(Laps.startLfpInd(loopnum):Laps.endLfpInd(loopnum));
+    
+    if markersdone(loopnum) == 0;
+        
+        %     testholdx = Track.xPix(Laps.startLfpInd(loopnum):Laps.endLfpInd(loopnum));
+        %     testholdy = Track.yPix(Laps.startLfpInd(loopnum):Laps.endLfpInd(loopnum));
+        %     mazesect = Track.mazeSect(Laps.startLfpInd(loopnum):Laps.endLfpInd(loopnum));
+        
+        if Laps.dirChoice(loopnum) == 1
+            arm = 4;
+            port = 7;
+        elseif Laps.dirChoice(loopnum) == 2
+            arm = 5;
+            port = 8;
+        elseif Laps.dirChoice(loopnum) == 3
+            arm = 6;
+            port = 9;
+        end
+        
+        
+        
+        endout = min(find(mazesect ==port ));
+        
+        if Laps.dirChoice(loopnum) == 3
+            startout = max(find(mazesect(1:endout) > 9 | mazesect(1:endout) < 2 ));
+        else
+            startout = min(find(mazesect(1:endout) > 9 ));
+        end
+        
+        
+        startin = max(find(mazesect ==port ));
+        endout = min(find(mazesect ==port ));
+        
+        
+        if Laps.dirChoice(loopnum) == 3
+            endintrans = min(find(mazesect(startin:end) > 9 | mazesect(startin:end) < 2 ));
+        else
+            endintrans = max(find(mazesect(startin:end) > 9));
+        end
+        
+        
+        endin = endintrans + startin;
+        
+        %temp fix for stinky20150807
+        if isempty(startout)
+            startout = 12596;
+        end
+
+        
+        outbound(loopnum,1) = startout;
+        outbound(loopnum,2) = endout;
+        inbound(loopnum,1) = startin;
+        inbound(loopnum,2) = endin;
+        
+    else
+        startout = outbound(loopnum,1);
+        endout = outbound(loopnum,2);
+        startin = inbound(loopnum,1);
+        endin = inbound(loopnum,2);
+        
+        
+    end
+    
+    
+    plot(Track.xPix(1:500:end),Track.yPix(1:500:end),'Color',[0.5 0.5 0.5])
+    hold on;
+    plot(testholdx,testholdy,'k');
+    hold on;
+    plot(testholdx(startout:endout),testholdy(startout:endout),'c','LineWidth',3)
+    hold on
+    plot(testholdx(startin:endin),testholdy(startin:endin),'r','LineWidth',3)
+    hold(ax, 'on');
+    title(ax, ['trial # ',num2str(loopnum),'']);
+    axis ij
+    hold(ax, 'off');
+    axis equal
+
+    %  plot3(testholdx,testholdy,1:length(testholdy),'k');
+    % hold on;
+    % plot3(testholdx(startout:endout),testholdy(startout:endout),startout:endout,'c','LineWidth',3)
+    % hold on
+    % plot3(testholdx(startin:endin),testholdy(startin:endin),startin:endin,'r','LineWidth',3)
+    % hold(ax, 'on');
+    % title(ax, ['trial # ',num2str(loopnum),'']);
+    % axis ij
+    % hold(ax, 'off');
+    %  % axis equal
+    %  daspect([1 1 80])
+    
+    was_a_key = waitforbuttonpress;
+    
+    if was_a_key && strcmp(get(fig, 'CurrentKey'), 'space')
+        
+        inx = [];iny = [];outx = [];outy = [];
+        
+        outx = testholdx(startout:endout);
+        outy = testholdy(startout:endout);
+        
+        inx = testholdx(startin:endin);
+        iny = testholdy(startin:endin);
+        
+        cutzone = impoly;
+        wait(cutzone)
+        polypositions = getPosition(cutzone);
+        outboundcut = inpolygon(outx,outy,polypositions(:,1),polypositions(:,2));
+        inboundcut = inpolygon(inx,iny,polypositions(:,1),polypositions(:,2));
+        
+        if length(find(outboundcut)) > 0
+            
+            startoutclip = max(find(outboundcut));
+            startout = startout + startoutclip;
+            clf
+        end
+        
+        if length(find(inboundcut)) > 0
+            
+            endinclip = length(find(inboundcut));
+            endin = endin - endinclip;
+            clf
+        end
+        
+        outbound(loopnum,1) = startout;
+        outbound(loopnum,2) = endout;
+        inbound(loopnum,1) = startin;
+        inbound(loopnum,2) = endin;
+        
+        gcf;
+        plot(Track.xPix(1:500:end),Track.yPix(1:500:end),'Color',[0.5 0.5 0.5])
+        hold on
+        plot(testholdx,testholdy,'k');
+        hold on
+        plot(testholdx(startout:endout),testholdy(startout:endout),'c','LineWidth',3)
+        hold on
+        plot(testholdx(startin:endin),testholdy(startin:endin),'r','LineWidth',3)
+        axis ij
+        fig = gcf;
+        ax = axes('Parent', fig);
+        hold(ax, 'on');
+        hold(ax, 'off');
+        markersdone(loopnum) = 1;
+        
+        
+    else if was_a_key && strcmp(get(fig, 'CurrentKey'), 'uparrow')
+            loopnum = max(1, loopnum - 1);
+        else
+            markersdone(loopnum) = 1;
+            loopnum = loopnum + 1;
+            
+        end
+    end
+    
+end
+
+
+%%
+for loopnum = 1:size(Laps.lapID,1)
+    inbound(loopnum,1) = inbound(loopnum,1) + Laps.startLfpInd(loopnum);
+    inbound(loopnum,2) = inbound(loopnum,2) + Laps.startLfpInd(loopnum);
+    
+    outbound(loopnum,1) = outbound(loopnum,1) + Laps.startLfpInd(loopnum);
+    outbound(loopnum,2) = outbound(loopnum,2) + Laps.startLfpInd(loopnum);
+    
+end
+
+
+Track.inbound = zeros(size(Track.xPix,1),1);
+Track.outbound = zeros(size(Track.xPix,1),1);
+
+for loopnum = 1:size(Laps.lapID,1);
+    Track.inbound(inbound(loopnum,1):inbound(loopnum,2)) = 1;
+    Track.outbound(outbound(loopnum,1):outbound(loopnum,2)) = 1;
+end
+
+
+% make spike.inbound and outbound structures
+Spike.inbound = zeros(size(Spike.res,1),1);
+Spike.outbound = zeros(size(Spike.res,1),1);
+
+for j = 1:size(Spike.res,1)
+    
+    if Track.inbound(Spike.res(j)) == 1;
+        Spike.inbound(j) =1;
+    else
+        Spike.inbound(j) = 0;
+    end
+    
+     if Track.outbound(Spike.res(j)) == 1;
+        Spike.outbound(j) =1;
+    else
+        Spike.outbound(j) = 0;
+     end
+end
+
+
+
+%%
+clearvars -except behEvents Clu Spike Track Laps trialMaster UpCrossings* xml
+
+save('rec01_BehavElectrDataLFP.mat')
+
+
+
+%% to make the linear track lines on the inbound and outbound limited trajectories.
+if ~isfield(Track, 'linLinesLeftArm')
+    %%
+    xTrIO = Track.xPix(Track.xPix > 0 & Track.yPix > 0 & Track.inbound ==1 |Track.outbound ==1);
+    yTrIO = Track.yPix(Track.xPix > 0 & Track.yPix > 0 & Track.inbound ==1 |Track.outbound ==1);
+    
+    figure;
+    
+    plot(xTrIO,yTrIO,'.')
+    axis ij
+    hold on
+    title('left arm line');
+    la = impoly;
+    leftarm = getPosition(la);
+    hold on
+    leftx2 = interp(leftarm(:,1),50);
+    lefty2 = interp(leftarm(:,2),50);
+    plot(leftx2,lefty2,'LineWidth',2,'color','r')
+    title('right arm line');
+    ra = impoly;
+    rightarm = getPosition(ra);
+    hold on
+    rightx2 = interp(rightarm(:,1),50);
+    righty2 = interp(rightarm(:,2),50);
+    plot(rightx2,righty2,'LineWidth',2,'color','c')
+    title('center arm line');
+    ca = impoly;
+    centerarm = getPosition(ca);
+    hold on
+    centerx2 = interp(centerarm(:,1),50);
+    centery2 = interp(centerarm(:,2),50);
+    plot(centerx2,centery2,'LineWidth',2,'color','g')
+    
+    title('make end cutoff line')
+    cutoff = imline;
+    wait(cutoff);
+    cutoffpos = round(mean(getPosition(cutoff)));
+    cutoffval = cutoffpos(1);
+    
+    leftx2 = leftx2(leftx2<cutoffval);
+    lefty2 = lefty2(leftx2<cutoffval);
+    
+    centerx2 = centerx2(centerx2<cutoffval);
+    centery2 = centery2(centerx2<cutoffval);
+    
+    rightx2 = rightx2(rightx2<cutoffval);
+    righty2 = righty2(rightx2<cutoffval);
+    
+    
+    [pt] = interparc(500,leftx2,lefty2);
+    [ct] = interparc(500,centerx2,centery2);
+    [rt] = interparc(500,rightx2,righty2);
+    
+    clf;
+    
+    plot(xTrIO,yTrIO,'.')
+    axis ij
+    hold on
+    plot(rt(:,1),rt(:,2),'LineWidth',2,'color','c')
+    hold on;
+    plot(ct(:,1),ct(:,2),'LineWidth',2,'color','g')
+    hold on;
+    plot(pt(:,1),pt(:,2),'LineWidth',2,'color','r')
+    
+    title('bound lines for snapping to linearized arms above this line is left')
+    cutoff = imline;
+    wait(cutoff);
+    cutoffpos = round(mean(getPosition(cutoff)));
+    aboveisLEFT = cutoffpos(2);
+    delete(cutoff)
+    title('bound lines for snapping to linearized arms above this line is cent')
+    cutoff2 = imline;
+    wait(cutoff2);
+    cutoffpos2 = round(mean(getPosition(cutoff2)));
+    aboveisCENT = cutoffpos2(2);
+    
+    
+    
+    
+    Track.linLinesLeftArm = pt;
+    Track.linLinesCenterArm = ct;
+    Track.linLinesRightArm = rt;
+    
+end
+%
+if ~isfield(Track,'xPixProj')
+    
+    Track.xPixProj = Track.xPix;
+    Track.yPixProj = Track.yPix;
+    
+    pt = Track.linLinesLeftArm;
+    ct = Track.linLinesCenterArm;
+    rt = Track.linLinesRightArm;
+    
+    for loopnum = 1:length(Laps.lapID)
+        bigSegmentX = [];
+        bigSegmentY = [];
+        % get full trial x & y tracking values
+        bigSegmentX = Track.xPix(Laps.startLfpInd(loopnum):Laps.endLfpInd(loopnum));
+        bigSegmentY = Track.yPix(Laps.startLfpInd(loopnum):Laps.endLfpInd(loopnum));
+        
+        % get markers for inbound and outbound segments
+        bigSegmentwImarker = Track.inbound(Laps.startLfpInd(loopnum):Laps.endLfpInd(loopnum));
+        bigSegmentwOmarker = Track.outbound(Laps.startLfpInd(loopnum):Laps.endLfpInd(loopnum));
+        
+%         if loopnum == 35 
+%             bigSegmentwImarker(1) = 0;
+%         end
+%         
+%          if loopnum == 39 
+%             bigSegmentwImarker(1) = 0;
+%         end
+        bigSegmentwImarker(1) = 0;
+        
+        % get indices for inbound and outbound to use for inserting back in
+        startSubSegindexOut = find(bigSegmentwOmarker ==1,1,'first');
+        endSubSegindexOut = find(bigSegmentwOmarker ==1,1,'last');
+        
+        startSubSegindexIn = find(bigSegmentwImarker ==1,1,'first');
+        endSubSegindexIn = find(bigSegmentwImarker ==1,1,'last');
+        
+     
+        
+        
+        %figure out which linearized line to snap on to
+        armYvalcheck = mean(bigSegmentY(bigSegmentX>200 & bigSegmentX<500));
+        
+        if armYvalcheck < aboveisLEFT
+            linearLine = 'pt';
+            snapyVal = 25;
+        elseif armYvalcheck >aboveisLEFT && armYvalcheck <aboveisCENT
+            linearLine = 'ct';
+            snapyVal = 150;
+        elseif  armYvalcheck > aboveisCENT 
+            linearLine = 'rt';
+            snapyVal = 250;
+        end
+        
+        %%
+        for inout = [1 2]
+            subSeg2snapX = [];
+            subSeg2snapY = [];
+            
+            if inout ==1
+                subSeg2snapX = bigSegmentX(bigSegmentwOmarker ==1);
+                subSeg2snapY=  bigSegmentY(bigSegmentwOmarker ==1);
+            else
+                subSeg2snapX = bigSegmentX(bigSegmentwImarker ==1);
+                subSeg2snapY=  bigSegmentY(bigSegmentwImarker ==1);
+            end
+            
+            
+            %         tic
+            %         [~,xref] = min(...
+            %             (bsxfun(@plus, subSeg2snapX', -pt(:,1)).^2 +...
+            %             bsxfun(@plus, subSeg2snapY', -pt(:,2)).^2)...
+            %             );
+            
+            eval(sprintf('[~,xref] = min((bsxfun(@plus, subSeg2snapX'', -%s(:,1)).^2 + bsxfun(@plus, subSeg2snapY'', -%s(:,2)).^2));',linearLine,linearLine))
+            %         toc
+            
+            if inout ==1
+                bigSegmentX(startSubSegindexOut:endSubSegindexOut) = xref;
+                bigSegmentY(startSubSegindexOut:endSubSegindexOut) = snapyVal;
+            else
+                bigSegmentX(startSubSegindexIn:endSubSegindexIn) = xref;
+                bigSegmentY(startSubSegindexIn:endSubSegindexIn) = snapyVal;
+            end
+            
+        end
+        
+        Track.xPixProj(Laps.startLfpInd(loopnum):Laps.endLfpInd(loopnum)) = bigSegmentX;
+        Track.yPixProj(Laps.startLfpInd(loopnum):Laps.endLfpInd(loopnum)) = bigSegmentY;
+        
+    end
+    
+    
+    Spike.xPixProj = Spike.xPix;
+    Spike.yPixProj = Spike.yPix;
+    
+    
+    for i = 1:length(Spike.res)
+        Spike.xPixProj(i) = Track.xPixProj(Spike.res(i));
+        Spike.yPixProj(i) = Track.yPixProj(Spike.res(i));
+    end
+    
+   
+    clearvars -except behEvents Clu Spike Track Laps trialMaster UpCrossings* xml
+    save('rec01_BehavElectrDataLFP.mat')
+    
+else
+    
+end
