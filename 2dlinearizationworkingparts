@@ -1,0 +1,572 @@
+cd '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/12_07'
+
+
+allValuesamp = cat(2, pbeMaster.decode2dmaxprob{:});
+
+allValuesX = cat(2, pbeMaster.decode2dmaxXval{:});
+allValuesY = cat(2, pbeMaster.decode2dmaxYval{:});
+
+figure;
+% for ratsess = 1:15
+ratsess = 2;
+    allValuesX = cat(2, pbeMaster.decode2dmaxXval{:});
+allValuesY = cat(2, pbeMaster.decode2dmaxYval{:});
+scatter(allValuesX,allValuesY)
+   axis ij
+
+
+allValuesX = cat(2, pbeMaster.decode2dmaxXval{pbeMaster.ratsession == ratsess});
+allValuesY = cat(2, pbeMaster.decode2dmaxYval{pbeMaster.ratsession == ratsess});
+
+ 
+hold on
+scatter(allValuesX,allValuesY,'filled','r')
+   axis ij
+
+
+%  %%
+% 
+%         allValuesX = cat(2, pbeMaster.decode2dmaxXval{:});
+%         allValuesY = cat(2, pbeMaster.decode2dmaxYval{:});
+%         figure;
+%         subplot(2,1,1)
+%         scatter(allValuesX,allValuesY)
+%          axis ij
+%         cutzone = impoly;
+%         wait(cutzone)
+%         polypositions = getPosition(cutzone);
+%         cutthis = inpolygon(allValuesX,allValuesY,polypositions(:,1),polypositions(:,2));
+%         subplot(2,1,2);
+%         allValuesX(cutthis) =0;
+%         allValuesY(cutthis) = 0;
+%         scatter(allValuesX,allValuesY)
+%          axis ij
+% 
+% 
+% 
+% % end
+
+%%
+
+allValuesX = cat(1, pbeMaster.decode2dmaxXval{:});
+allValuesY = cat(1, pbeMaster.decode2dmaxYval{:});
+
+figure; scatter(allValuesX,allValuesY)
+   axis ij
+   la = impoly;
+    leftarm = getPosition(la);
+    hold on
+    leftx2 = interp(leftarm(:,1),50);
+    lefty2 = interp(leftarm(:,2),50);
+    plot(leftx2,lefty2,'LineWidth',2,'color','r')
+    title('right arm line');
+    ra = impoly;
+    rightarm = getPosition(ra);
+    hold on
+    rightx2 = interp(rightarm(:,1),50);
+    righty2 = interp(rightarm(:,2),50);
+    plot(rightx2,righty2,'LineWidth',2,'color','c')
+    title('center arm line');
+    ca = impoly;
+    centerarm = getPosition(ca);
+    hold on
+    centerx2 = interp(centerarm(:,1),50);
+    centery2 = interp(centerarm(:,2),50);
+    plot(centerx2,centery2,'LineWidth',2,'color','g')
+   axis equal
+    
+    title('make end cutoff line')
+    cutoff = imline;
+    wait(cutoff);
+    cutoffpos = round(mean(getPosition(cutoff)));
+    cutoffval = cutoffpos(1);
+    
+    leftx2 = leftx2(leftx2<cutoffval);
+    lefty2 = lefty2(leftx2<cutoffval);
+    
+    centerx2 = centerx2(centerx2<cutoffval);
+    centery2 = centery2(centerx2<cutoffval);
+    
+    rightx2 = rightx2(rightx2<cutoffval);
+    righty2 = righty2(rightx2<cutoffval);
+    
+    
+    % [pt] = interparc(500,leftx2,lefty2);
+    % [ct] = interparc(500,centerx2,centery2);
+    % [rt] = interparc(500,rightx2,righty2);
+    
+    [pt] = interparc(100,leftx2,lefty2);
+    [ct] = interparc(100,centerx2,centery2);
+    [rt] = interparc(100,rightx2,righty2);
+        
+    %%
+
+cd '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/12_07'
+
+
+% load('workinglines.mat')
+load('workinglines2.mat')
+load('pbeMasterTempTests2.mat')
+%%
+allValuesX = cat(1, pbeMaster.decode2dmaxXval{:});
+allValuesY = cat(1, pbeMaster.decode2dmaxYval{:});
+
+
+figure; scatter(allValuesX,allValuesY)
+    axis equal
+   axis ij
+
+   
+    hold on
+    plot(rt(:,1),rt(:,2),'LineWidth',2,'color','c') % right arm line
+    hold on;
+    plot(ct(:,1),ct(:,2),'LineWidth',2,'color','g') % center arm line
+    hold on;
+    plot(pt(:,1),pt(:,2),'LineWidth',2,'color','r') %  left arm line
+
+    camroll(90)
+    
+
+
+
+
+
+
+%%
+
+%notes to self:
+% need to make the lines redrawn and have them never be vertical or going
+% back in x-axis because that would mess up / put discontinuity in the
+% linearization 
+% plan is to then have all the values in a cutoutzone marked as to snap
+% onto every line 
+% then for all other points get the nimdistance to snap onto the nearest
+% point from all three lines - then use the one that has the smallest
+% minimum distance as the point to snap to (x- coord) 
+% then this should give three lines for every event with values snapped to
+% each line - a line could have no values snapped to it.. or also in the
+% case of having multiple points in the delay zone it might have the same
+% points all snapped to all three lines. 
+
+
+linenames = {'pt'; 'ct' ;'rt';};
+linenames2 = {'L'; 'C' ;'R';};
+
+
+for numID = 1:size(pbeMaster.rat,1);
+
+
+    armYvalcheck = pbeMaster.decode2dmaxYval{numID,:}(pbeMaster.decode2dmaxprob{numID}>0.1);
+    armCount(1,1) = length(find(armYvalcheck<20));
+    armCount(2,1) = length(find(armYvalcheck>20 & armYvalcheck<35));
+    armCount(3,1) = length(find(armYvalcheck>35));
+    [~,inde] = max(armCount)
+
+    if inde == 1
+        linearLine = 'pt';
+        snapyVal = 5; %left
+    elseif inde == 2
+        linearLine = 'ct';
+        snapyVal = 25; % center
+    elseif  inde == 3
+        linearLine = 'rt';
+        snapyVal = 45;%right
+    end
+
+    
+
+    subSeg2snapX = [];
+    subSeg2snapY = [];
+
+   
+    subSeg2snapX = (pbeMaster.decode2dmaxXval{numID,:});
+    subSeg2snapY=  (pbeMaster.decode2dmaxYval{numID,:});
+
+    [~,xref] = min((bsxfun(@plus, subSeg2snapX, -pt(:,1)).^2 + bsxfun(@plus, subSeg2snapY, -pt(:,2)).^2));
+
+
+ 
+
+    eval(sprintf('[~,xref] = min((bsxfun(@plus, subSeg2snapX'', -%s(:,1)).^2 + bsxfun(@plus, subSeg2snapY'', -%s(:,2)).^2));',linearLine,linearLine))
+
+
+    pbeMaster.decode2dLinear{numID,1} = xref;
+    pbeMaster.decode2dLinearARM{numID,1} = snapyVal;
+    if length(find(pbeMaster.decode2dmaxprob{numID}>0.1))>0
+        pbeMaster.decode2dLinearCorV(numID,1) = corr((1:length(pbeMaster.decode2dLinear{numID}(pbeMaster.decode2dmaxprob{numID}>0.1)))', (pbeMaster.decode2dLinear{numID}(pbeMaster.decode2dmaxprob{numID}>0.1))','type','Spearman' );
+        pbeMaster.decode2dLinearStepCount(numID,1) = length(find((pbeMaster.decode2dmaxprob{numID}>0.1)));
+
+    else
+        pbeMaster.decode2dLinearCorV(numID,1) = 0;
+        pbeMaster.decode2dLinearStepCount(numID,1) = 0;
+    end
+
+end
+
+
+%% chatgpt version
+% Define the lines pt, ct, rt
+% Ensure pt, ct, and rt are defined with appropriate coordinates
+% pt = ...; % Matrix with [x, y] coordinates
+% ct = ...; % Matrix with [x, y] coordinates
+% rt = ...; % Matrix with [x, y] coordinates
+
+for numID = 1:size(pbeMaster.rat,1)
+    % Extract relevant Y values
+    armYvalcheck = pbeMaster.decode2dmaxYval{numID}(pbeMaster.decode2dmaxprob{numID}>0.1);
+    
+    % Count values in specified ranges
+    armCount = [sum(armYvalcheck < 20), sum(armYvalcheck > 20 & armYvalcheck < 35), sum(armYvalcheck > 35)];
+    
+    % Initialize variables to store snapped indices and distances
+    subSeg2snapX = pbeMaster.decode2dmaxXval{numID};
+    subSeg2snapY = pbeMaster.decode2dmaxYval{numID};
+    
+    % Calculate distances for each line
+    dists_pt = (bsxfun(@plus, subSeg2snapX, -pt(:,1)').^2 + bsxfun(@plus, subSeg2snapY, -pt(:,2)').^2);
+    dists_ct = (bsxfun(@plus, subSeg2snapX, -ct(:,1)').^2 + bsxfun(@plus, subSeg2snapY, -ct(:,2)').^2);
+    dists_rt = (bsxfun(@plus, subSeg2snapX, -rt(:,1)').^2 + bsxfun(@plus, subSeg2snapY, -rt(:,2)').^2);
+    
+    % For each point, find the closest line
+    [min_dists, closest_line] = min([dists_pt, dists_ct, dists_rt], [], 2);
+    
+    % Initialize result variables
+    xref = zeros(size(subSeg2snapX)); % Array to hold snapped indices
+    lineSnap = zeros(size(subSeg2snapX)); % Array to hold line index for each point
+    
+    % Determine the line and snapped index for each point
+    for i = 1:length(subSeg2snapX)
+        if closest_line(i) == 1
+            [~, xref(i)] = min(dists_pt(i,:));
+            lineSnap(i) = 1; % Snapped to pt
+        elseif closest_line(i) == 2
+            [~, xref(i)] = min(dists_ct(i,:));
+            lineSnap(i) = 2; % Snapped to ct
+        elseif closest_line(i) == 3
+            [~, xref(i)] = min(dists_rt(i,:));
+            lineSnap(i) = 3; % Snapped to rt
+        end
+    end
+    
+    % Store results in pbeMaster
+    pbeMaster.decode2dLinear{numID,1} = xref;
+    pbeMaster.decode2dLinearLine{numID,1} = lineSnap; % Store which line each point was snapped to
+    
+    % Calculate correlation and step count
+    if length(find(pbeMaster.decode2dmaxprob{numID}>0.1)) > 0
+        pbeMaster.decode2dLinearCorV(numID,1) = corr((1:length(pbeMaster.decode2dLinear{numID}(pbeMaster.decode2dmaxprob{numID}>0.1)))', ...
+            (pbeMaster.decode2dLinear{numID}(pbeMaster.decode2dmaxprob{numID}>0.1))','type','Spearman');
+        pbeMaster.decode2dLinearStepCount(numID,1) = length(find(pbeMaster.decode2dmaxprob{numID}>0.1));
+    else
+        pbeMaster.decode2dLinearCorV(numID,1) = 0;
+        pbeMaster.decode2dLinearStepCount(numID,1) = 0;
+    end
+end
+
+
+%%
+
+% Define the lines pt, ct, rt
+% Ensure pt, ct, and rt are defined with appropriate coordinates
+% pt = ...; % Matrix with [x, y] coordinates
+% ct = ...; % Matrix with [x, y] coordinates
+% rt = ...; % Matrix with [x, y] coordinates
+
+% Initialize new structures for each line
+pbeMaster.decode2dLinearLinePt = cell(size(pbeMaster.rat,1), 1);
+pbeMaster.decode2dLinearLineCt = cell(size(pbeMaster.rat,1), 1);
+pbeMaster.decode2dLinearLineRt = cell(size(pbeMaster.rat,1), 1);
+
+for numID = 1:size(pbeMaster.rat,1)
+    % Extract relevant Y values
+    armYvalcheck = pbeMaster.decode2dmaxYval{numID}(pbeMaster.decode2dmaxprob{numID}>0.1);
+    
+    % Count values in specified ranges
+    armCount = [sum(armYvalcheck < 20), sum(armYvalcheck > 20 & armYvalcheck < 35), sum(armYvalcheck > 35)];
+    
+    % Initialize variables to store snapped indices and distances
+    subSeg2snapX = pbeMaster.decode2dmaxXval{numID};
+    subSeg2snapY = pbeMaster.decode2dmaxYval{numID};
+    
+    % Calculate distances for each line
+    dists_pt = (bsxfun(@plus, subSeg2snapX, -pt(:,1)').^2 + bsxfun(@plus, subSeg2snapY, -pt(:,2)').^2);
+    dists_ct = (bsxfun(@plus, subSeg2snapX, -ct(:,1)').^2 + bsxfun(@plus, subSeg2snapY, -ct(:,2)').^2);
+    dists_rt = (bsxfun(@plus, subSeg2snapX, -rt(:,1)').^2 + bsxfun(@plus, subSeg2snapY, -rt(:,2)').^2);
+    
+    % For each point, find the closest line
+    [min_dists, closest_line] = min([dists_pt, dists_ct, dists_rt], [], 2);
+    
+    % Initialize result variables
+    xref = zeros(size(subSeg2snapX)); % Array to hold snapped indices
+    lineSnap = zeros(size(subSeg2snapX)); % Array to hold line index for each point
+    
+    % Determine the line and snapped index for each point
+    for i = 1:length(subSeg2snapX)
+        if closest_line(i) == 1
+            [~, xref(i)] = min(dists_pt(i,:));
+            lineSnap(i) = 1; % Snapped to pt
+        elseif closest_line(i) == 2
+            [~, xref(i)] = min(dists_ct(i,:));
+            lineSnap(i) = 2; % Snapped to ct
+        elseif closest_line(i) == 3
+            [~, xref(i)] = min(dists_rt(i,:));
+            lineSnap(i) = 3; % Snapped to rt
+        end
+    end
+    
+    % Store results in pbeMaster
+    pbeMaster.decode2dLinear{numID,1} = xref;
+    pbeMaster.decode2dLinearLine{numID,1} = lineSnap; % Store which line each point was snapped to
+    
+    % Create masks for each line
+    mask_pt = (lineSnap == 1);
+    mask_ct = (lineSnap == 2);
+    mask_rt = (lineSnap == 3);
+    
+    % Store points snapped to each line in new structures
+    pbeMaster.decode2dLinearLinePt{numID,1} = subSeg2snapX(mask_pt);
+    pbeMaster.decode2dLinearLineCt{numID,1} = subSeg2snapX(mask_ct);
+    pbeMaster.decode2dLinearLineRt{numID,1} = subSeg2snapX(mask_rt);
+    
+    % Optionally store corresponding Y values
+    pbeMaster.decode2dLinearLinePtY{numID,1} = subSeg2snapY(mask_pt);
+    pbeMaster.decode2dLinearLineCtY{numID,1} = subSeg2snapY(mask_ct);
+    pbeMaster.decode2dLinearLineRtY{numID,1} = subSeg2snapY(mask_rt);
+    
+    % Calculate correlation and step count
+    if length(find(pbeMaster.decode2dmaxprob{numID}>0.1)) > 0
+        pbeMaster.decode2dLinearCorV(numID,1) = corr((1:length(pbeMaster.decode2dLinear{numID}(pbeMaster.decode2dmaxprob{numID}>0.1)))', ...
+            (pbeMaster.decode2dLinear{numID}(pbeMaster.decode2dmaxprob{numID}>0.1))','type','Spearman');
+        pbeMaster.decode2dLinearStepCount(numID,1) = length(find(pbeMaster.decode2dmaxprob{numID}>0.1));
+    else
+        pbeMaster.decode2dLinearCorV(numID,1) = 0;
+        pbeMaster.decode2dLinearStepCount(numID,1) = 0;
+    end
+end
+
+
+
+%%
+
+% Define the lines pt, ct, rt
+% Ensure pt, ct, and rt are defined with appropriate coordinates
+% pt = ...; % Matrix with [x, y] coordinates
+% ct = ...; % Matrix with [x, y] coordinates
+% rt = ...; % Matrix with [x, y] coordinates
+
+% Initialize new structures for each line
+pbeMaster.decode2dLinearLinePt = cell(size(pbeMaster.rat,1), 1);
+pbeMaster.decode2dLinearLineCt = cell(size(pbeMaster.rat,1), 1);
+pbeMaster.decode2dLinearLineRt = cell(size(pbeMaster.rat,1), 1);
+
+% Optional storage for Y values corresponding to the lines
+pbeMaster.decode2dLinearLinePtY = cell(size(pbeMaster.rat,1), 1);
+pbeMaster.decode2dLinearLineCtY = cell(size(pbeMaster.rat,1), 1);
+pbeMaster.decode2dLinearLineRtY = cell(size(pbeMaster.rat,1), 1);
+
+% Optional storage for amplitude values corresponding to the lines
+pbeMaster.decode2dLinearLinePtAmp = cell(size(pbeMaster.rat,1), 1);
+pbeMaster.decode2dLinearLineCtAmp = cell(size(pbeMaster.rat,1), 1);
+pbeMaster.decode2dLinearLineRtAmp = cell(size(pbeMaster.rat,1), 1);
+
+for numID = 1:size(pbeMaster.rat,1)
+    % Extract X, Y, and amplitude values for the current ID
+    subSeg2snapX = pbeMaster.decode2dmaxXval{numID};
+    subSeg2snapY = pbeMaster.decode2dmaxYval{numID};
+    subSeg2snapAmp = pbeMaster.decode2dmaxprob{numID};
+    
+    % Calculate distances for each line
+    dists_pt = (bsxfun(@plus, subSeg2snapX, -pt(:,1)').^2 + bsxfun(@plus, subSeg2snapY, -pt(:,2)').^2);
+    dists_ct = (bsxfun(@plus, subSeg2snapX, -ct(:,1)').^2 + bsxfun(@plus, subSeg2snapY, -ct(:,2)').^2);
+    dists_rt = (bsxfun(@plus, subSeg2snapX, -rt(:,1)').^2 + bsxfun(@plus, subSeg2snapY, -rt(:,2)').^2);
+    
+    % For each point, find the closest line
+    [min_dists, closest_line] = min([dists_pt, dists_ct, dists_rt], [], 2);
+    
+    % Initialize result variables
+    xref = zeros(size(subSeg2snapX)); % Array to hold snapped indices
+    lineSnap = zeros(size(subSeg2snapX)); % Array to hold line index for each point
+    
+    % Determine the line and snapped index for each point
+    for i = 1:length(subSeg2snapX)
+        if closest_line(i) == 1
+            [~, xref(i)] = min(dists_pt(i,:));
+            lineSnap(i) = 1; % Snapped to pt
+        elseif closest_line(i) == 2
+            [~, xref(i)] = min(dists_ct(i,:));
+            lineSnap(i) = 2; % Snapped to ct
+        elseif closest_line(i) == 3
+            [~, xref(i)] = min(dists_rt(i,:));
+            lineSnap(i) = 3; % Snapped to rt
+        end
+    end
+    
+    % Store results in pbeMaster
+    pbeMaster.decode2dLinear{numID,1} = xref;
+    pbeMaster.decode2dLinearLine{numID,1} = lineSnap; % Store which line each point was snapped to
+    
+    % Create masks for each line
+    mask_pt = (lineSnap == 1);
+    mask_ct = (lineSnap == 2);
+    mask_rt = (lineSnap == 3);
+    
+    % Store points snapped to each line in new structures
+    pbeMaster.decode2dLinearLinePt{numID,1} = subSeg2snapX(mask_pt);
+    pbeMaster.decode2dLinearLineCt{numID,1} = subSeg2snapX(mask_ct);
+    pbeMaster.decode2dLinearLineRt{numID,1} = subSeg2snapX(mask_rt);
+    
+    % Optionally store corresponding Y values
+    pbeMaster.decode2dLinearLinePtY{numID,1} = subSeg2snapY(mask_pt);
+    pbeMaster.decode2dLinearLineCtY{numID,1} = subSeg2snapY(mask_ct);
+    pbeMaster.decode2dLinearLineRtY{numID,1} = subSeg2snapY(mask_rt);
+    
+    % Store amplitude values corresponding to each line
+    pbeMaster.decode2dLinearLinePtAmp{numID,1} = subSeg2snapAmp(mask_pt);
+    pbeMaster.decode2dLinearLineCtAmp{numID,1} = subSeg2snapAmp(mask_ct);
+    pbeMaster.decode2dLinearLineRtAmp{numID,1} = subSeg2snapAmp(mask_rt);
+    
+    % Calculate correlation and step count
+    if length(find(pbeMaster.decode2dmaxprob{numID}>0.1)) > 0
+        pbeMaster.decode2dLinearCorV(numID,1) = corr((1:length(pbeMaster.decode2dLinear{numID}(pbeMaster.decode2dmaxprob{numID}>0.1)))', ...
+            (pbeMaster.decode2dLinear{numID}(pbeMaster.decode2dmaxprob{numID}>0.1))','type','Spearman');
+        pbeMaster.decode2dLinearStepCount(numID,1) = length(find(pbeMaster.decode2dmaxprob{numID}>0.1));
+    else
+        pbeMaster.decode2dLinearCorV(numID,1) = 0;
+        pbeMaster.decode2dLinearStepCount(numID,1) = 0;
+    end
+end
+
+
+%%
+
+% Define the lines pt, ct, rt
+% Ensure pt, ct, and rt are defined with appropriate coordinates
+% pt = ...; % Matrix with [x, y] coordinates
+% ct = ...; % Matrix with [x, y] coordinates
+% rt = ...; % Matrix with [x, y] coordinates
+
+% Initialize new structures for each line
+pbeMaster.decode2dLinearLinePt = cell(size(pbeMaster.rat,1), 1);
+pbeMaster.decode2dLinearLineCt = cell(size(pbeMaster.rat,1), 1);
+pbeMaster.decode2dLinearLineRt = cell(size(pbeMaster.rat,1), 1);
+
+% Optional storage for Y values corresponding to the lines
+pbeMaster.decode2dLinearLinePtY = cell(size(pbeMaster.rat,1), 1);
+pbeMaster.decode2dLinearLineCtY = cell(size(pbeMaster.rat,1), 1);
+pbeMaster.decode2dLinearLineRtY = cell(size(pbeMaster.rat,1), 1);
+
+% Optional storage for amplitude values corresponding to the lines
+pbeMaster.decode2dLinearLinePtAmp = cell(size(pbeMaster.rat,1), 1);
+pbeMaster.decode2dLinearLineCtAmp = cell(size(pbeMaster.rat,1), 1);
+pbeMaster.decode2dLinearLineRtAmp = cell(size(pbeMaster.rat,1), 1);
+
+% Initialize correlation and step count structures
+pbeMaster.decode2dLinearCorV = zeros(size(pbeMaster.rat,1), 1);
+pbeMaster.decode2dLinearStepCount = zeros(size(pbeMaster.rat,1), 1);
+
+pbeMaster.decode2dLinearLinePtCorV = zeros(size(pbeMaster.rat,1), 1);
+pbeMaster.decode2dLinearLineCtCorV = zeros(size(pbeMaster.rat,1), 1);
+pbeMaster.decode2dLinearLineRtCorV = zeros(size(pbeMaster.rat,1), 1);
+
+pbeMaster.decode2dLinearLinePtStepCount = zeros(size(pbeMaster.rat,1), 1);
+pbeMaster.decode2dLinearLineCtStepCount = zeros(size(pbeMaster.rat,1), 1);
+pbeMaster.decode2dLinearLineRtStepCount = zeros(size(pbeMaster.rat,1), 1);
+
+for numID = 1:size(pbeMaster.rat,1)
+    % Extract X, Y, and amplitude values for the current ID
+    subSeg2snapX = pbeMaster.decode2dmaxXval{numID};
+    subSeg2snapY = pbeMaster.decode2dmaxYval{numID};
+    subSeg2snapAmp = pbeMaster.decode2dmaxprob{numID};
+    
+    % Calculate distances for each line
+    dists_pt = (bsxfun(@plus, subSeg2snapX, -pt(:,1)').^2 + bsxfun(@plus, subSeg2snapY, -pt(:,2)').^2);
+    dists_ct = (bsxfun(@plus, subSeg2snapX, -ct(:,1)').^2 + bsxfun(@plus, subSeg2snapY, -ct(:,2)').^2);
+    dists_rt = (bsxfun(@plus, subSeg2snapX, -rt(:,1)').^2 + bsxfun(@plus, subSeg2snapY, -rt(:,2)').^2);
+    
+    % For each point, find the closest line
+    [min_dists, closest_line] = min([dists_pt, dists_ct, dists_rt], [], 2);
+    
+    % Initialize result variables
+    xref = zeros(size(subSeg2snapX)); % Array to hold snapped indices
+    lineSnap = zeros(size(subSeg2snapX)); % Array to hold line index for each point
+    
+    % Determine the line and snapped index for each point
+    for i = 1:length(subSeg2snapX)
+        if closest_line(i) == 1
+            [~, xref(i)] = min(dists_pt(i,:));
+            lineSnap(i) = 1; % Snapped to pt
+        elseif closest_line(i) == 2
+            [~, xref(i)] = min(dists_ct(i,:));
+            lineSnap(i) = 2; % Snapped to ct
+        elseif closest_line(i) == 3
+            [~, xref(i)] = min(dists_rt(i,:));
+            lineSnap(i) = 3; % Snapped to rt
+        end
+    end
+    
+    % Store results in pbeMaster
+    pbeMaster.decode2dLinear{numID,1} = xref;
+    pbeMaster.decode2dLinearLine{numID,1} = lineSnap; % Store which line each point was snapped to
+    
+    % Create masks for each line
+    mask_pt = (lineSnap == 1);
+    mask_ct = (lineSnap == 2);
+    mask_rt = (lineSnap == 3);
+    
+    % Store points snapped to each line in new structures
+    pbeMaster.decode2dLinearLinePt{numID,1} = subSeg2snapX(mask_pt);
+    pbeMaster.decode2dLinearLineCt{numID,1} = subSeg2snapX(mask_ct);
+    pbeMaster.decode2dLinearLineRt{numID,1} = subSeg2snapX(mask_rt);
+    
+    % Optionally store corresponding Y values
+    pbeMaster.decode2dLinearLinePtY{numID,1} = subSeg2snapY(mask_pt);
+    pbeMaster.decode2dLinearLineCtY{numID,1} = subSeg2snapY(mask_ct);
+    pbeMaster.decode2dLinearLineRtY{numID,1} = subSeg2snapY(mask_rt);
+    
+    % Store amplitude values corresponding to each line
+    pbeMaster.decode2dLinearLinePtAmp{numID,1} = subSeg2snapAmp(mask_pt);
+    pbeMaster.decode2dLinearLineCtAmp{numID,1} = subSeg2snapAmp(mask_ct);
+    pbeMaster.decode2dLinearLineRtAmp{numID,1} = subSeg2snapAmp(mask_rt);
+    
+    % Calculate correlation and step count for the overall linear structure
+    if length(find(pbeMaster.decode2dmaxprob{numID}>0.1)) > 0
+        pbeMaster.decode2dLinearCorV(numID,1) = corr((1:length(pbeMaster.decode2dLinear{numID}(pbeMaster.decode2dmaxprob{numID}>0.1)))', ...
+ (pbeMaster.decode2dLinear{numID}(pbeMaster.decode2dmaxprob{numID}>0.1)), 'type', 'Spearman');
+        pbeMaster.decode2dLinearStepCount(numID,1) = length(find(pbeMaster.decode2dmaxprob{numID}>0.1));
+    else
+        pbeMaster.decode2dLinearCorV(numID,1) = 0;
+        pbeMaster.decode2dLinearStepCount(numID,1) = 0;
+    end
+    
+    % Calculate correlation and step count for each line
+    % For pt
+    if length(find(lineSnap == 1)) > 0
+        pbeMaster.decode2dLinearLinePtCorV(numID,1) = corr((1:length(pbeMaster.decode2dLinearLinePt{numID}))', ...
+            pbeMaster.decode2dLinearLinePt{numID}, 'type', 'Spearman');
+        pbeMaster.decode2dLinearLinePtStepCount(numID,1) = length(pbeMaster.decode2dLinearLinePt{numID});
+    else
+        pbeMaster.decode2dLinearLinePtCorV(numID,1) = 0;
+        pbeMaster.decode2dLinearLinePtStepCount(numID,1) = 0;
+    end
+    
+    % For ct
+    if length(find(lineSnap == 2)) > 0
+        pbeMaster.decode2dLinearLineCtCorV(numID,1) = corr((1:length(pbeMaster.decode2dLinearLineCt{numID}))', ...
+            pbeMaster.decode2dLinearLineCt{numID}, 'type', 'Spearman');
+        pbeMaster.decode2dLinearLineCtStepCount(numID,1) = length(pbeMaster.decode2dLinearLineCt{numID});
+    else
+        pbeMaster.decode2dLinearLineCtCorV(numID,1) = 0;
+        pbeMaster.decode2dLinearLineCtStepCount(numID,1) = 0;
+    end
+    
+    % For rt
+    if length(find(lineSnap == 3)) > 0
+        pbeMaster.decode2dLinearLineRtCorV(numID,1) = corr((1:length(pbeMaster.decode2dLinearLineRt{numID}))', ...
+            pbeMaster.decode2dLinearLineRt{numID}, 'type', 'Spearman');
+        pbeMaster.decode2dLinearLineRtStepCount(numID,1) = length(pbeMaster.decode2dLinearLineRt{numID});
+    else
+        pbeMaster.decode2dLinearLineRtCorV(numID,1) = 0;
+        pbeMaster.decode2dLinearLineRtStepCount(numID,1) = 0;
+    end
+    
+end
