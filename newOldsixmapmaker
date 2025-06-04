@@ -1,0 +1,179 @@
+
+%% making the six liner maps
+
+ % save(sprintf('sixmaps_SM_%02d_bin_%02d_spd_%02d.mat',smoothVAL,divXY,minSpeed),'binnedFR', 'sixfieldmaps','smoothVAL', 'divXY', 'minSpeed', 'sixfieldholderI', 'sixfieldholderO');
+% to check: figure; figure; plot(squeeze(sixfieldmaps(1,:,:))')
+
+    for RAT = [1:15]
+        listofdirects = {'/Users/lustigb10/Dropbox/CleanDataWork/Lucky/10_09'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Lucky/10_10'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Lucky/10_11'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Lucky/10_14'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Lucky/10_15';...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Ned/10_11';...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Ned/10_12';...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Ned/10_13';...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Ned/10_14';...
+        '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/11_28';...
+        '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/11_29'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/11_30'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/12_01'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/12_02'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/12_07'};
+
+      cd(listofdirects{RAT});
+     clearvars -except RAT listofdirects
+
+% make six maps
+
+
+
+ load('rec01_BehavElectrDataLFP.mat')
+%
+% figure;
+% imagesc(squeeze(sum(sixfieldmaps,1)))
+%%
+
+% if excluding laps % for right now this sets the laps to use.. so just
+% leave out the exluded
+
+% firstlap = 1;
+% lastlap = 67;
+
+tic
+
+% for firstlap = 11;
+testmapsIN = [];
+testmapsOUT = [];
+testBin = [10];
+testsmoothval = [1];
+testspeedthresh = [50];
+horizonly = 1;
+clulist = [1:max(Spike.totclu)];
+
+% tic
+
+for IDclu = clulist;
+
+    disp([num2str(IDclu) ' out of ' num2str(length(Clu.totClu))])
+
+    % normSmoothedFR = [];
+    % smFR = [];
+    % xTr = [];
+    % yTr = [];
+    % xSp = [];
+    % ySp = [];
+    % sp = [];
+
+    for armtype = [1 2 3]
+
+        normSmoothedFR = [];
+        smFR = [];
+        xTr = [];
+        yTr = [];
+        xSp = [];
+        ySp = [];
+        sp = [];
+
+        smoothVAL = testsmoothval;%270;%220; %50; %30
+        divXY = testBin;%;20;%5;
+
+        minSpeed = testspeedthresh;   % mm/sec
+
+
+        switch armtype
+
+            case 1
+                % outbound
+                xTr = Track.xPixProj(Track.xPix > 0 & Track.yPix > 0 & Track.speed_MMsec > minSpeed  & (Track.outbound ==1)  );
+                yTr = Track.yPixProj(Track.xPix > 0 & Track.yPix > 0 & Track.speed_MMsec > minSpeed & ( Track.outbound ==1));
+                sp = find(Spike.totclu == IDclu & Spike.xPix>0 & Spike.yPix>0 & Spike.speed_MMsec > minSpeed & ismember(Spike.res,find(Track.outbound)) );
+
+            case 2
+                % inbound       
+                xTr = Track.xPixProj(Track.xPix > 0 & Track.yPix > 0 & Track.speed_MMsec > minSpeed  & (Track.inbound ==1)  );
+                yTr = Track.yPixProj(Track.xPix > 0 & Track.yPix > 0 & Track.speed_MMsec > minSpeed & (Track.inbound ==1 ));
+                sp = find(Spike.totclu == IDclu & Spike.xPix>0 & Spike.yPix>0 & Spike.speed_MMsec > minSpeed & ismember(Spike.res,find(Track.inbound)) );
+
+            case 3
+                % combined
+                xTr = Track.xPixProj(Track.xPix > 0 & Track.yPix > 0 & Track.speed_MMsec > minSpeed  & (Track.inbound ==1 | Track.outbound ==1)  );
+                yTr = Track.yPixProj(Track.xPix > 0 & Track.yPix > 0 & Track.speed_MMsec > minSpeed & (Track.inbound ==1 | Track.outbound ==1));
+                sp = find(Spike.totclu == IDclu & Spike.xPix>0 & Spike.yPix>0 & Spike.speed_MMsec > minSpeed &  ismember(Spike.res, find(Track.inbound | Track.outbound)) );
+
+
+        end
+
+
+        xSpAll = Spike.xPixProj(sp);
+        ySpAll = Spike.yPixProj(sp);
+
+
+        xSp = xSpAll(xSpAll > 1);
+        ySp = ySpAll(xSpAll > 1);
+
+        meanFR = round((length(xSp) / (length(xTr)/1250)) * 10) / 10;             % n spikes/sec
+
+        % bin coordinates
+        binnedSpikes = full(sparse(round(xSp/divXY)+1,round(ySp/divXY)+1,1,round(max(xTr)/divXY+2),round(max(yTr)/divXY+2) ));
+        binnedTime = full(sparse(round(xTr/divXY)+1,round(yTr/divXY)+1,1/xml.lfpSampleRate,round(max(xTr)/divXY+2),round(max(yTr)/divXY+2)));
+        binnedFR = binnedSpikes ./ binnedTime;
+        binnedFR(1:floor(min(xTr)/divXY)-1,:) = [];
+        binnedFR(:,1:floor(min(yTr)/divXY)-1) = [];
+        binP = binnedTime ./ (sum(sum(binnedTime)));
+
+        binnedFR(isnan(binnedFR))=0; binnedFR(isinf(binnedFR))=0;
+        M = max([round(max(xSp)/divXY+1) round(max(ySp)/divXY+1)]);
+
+        % smFR = SmoothPix(binnedFR,[ 0 smoothVAL./M ]); %horiz smooth only
+
+        smFR = SmoothPix(binnedFR,[ 0 smoothVAL ]); %horiz smooth only
+
+
+        %normSmoothedFR = smFR ./ sum(smFR(:));
+
+
+
+
+        [~, arms,~] = find(mean(binnedTime));
+        trimfactor = floor(min(yTr)/divXY)-1;
+
+        arms = arms-trimfactor;
+
+
+
+
+    switch armtype
+
+        case 1
+        % combo - WRONG - OUTBOUND
+        armMaps(IDclu,1,1,:) =  smFR(:,arms(1));
+        armMaps(IDclu,1,2,:) =  smFR(:,arms(2));
+        armMaps(IDclu,1,3,:) =  smFR(:,arms(3));
+
+        case 2
+        % outbound - WRONG - INBOUND
+        armMaps(IDclu,2,1,:) =  smFR(:,arms(1));
+        armMaps(IDclu,2,2,:) =  smFR(:,arms(2));
+        armMaps(IDclu,2,3,:) =  smFR(:,arms(3));
+
+        case 3
+        % inbound - WRONG - COMBO
+        armMaps(IDclu,3,1,:) =  smFR(:,arms(1));
+        armMaps(IDclu,3,2,:) =  smFR(:,arms(2));
+        armMaps(IDclu,3,3,:) =  smFR(:,arms(3));
+
+    end
+
+
+
+    end
+
+end
+
+
+clearvars -except binnedFR armMaps smoothVAL divXY minSpeed
+
+ save(sprintf('NEWOLDarmMaps_SM_%02d_bin_%02d_spd_%02d.mat',smoothVAL,divXY,minSpeed));
+
+    end
