@@ -1,0 +1,639 @@
+%% code that gets CENTER scores output in terminal
+
+cd '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/12_07'
+
+clear all
+
+%load('pbeMasterprototype_v2.mat')
+
+% load pbeMasterwLendale.mat
+
+%load('pbeMasterprototype_WIN.mat')
+
+%load('pbeMasterprototype_WINFW.mat')
+
+%load('pbeMasterprototype_OLDwScale.mat')
+
+%load('pbeMasterprototype_OLDnoW.mat')
+
+% load('pbeMasterprototype_NEW.mat')
+
+
+%load('pbeMasterprototype_NEWSEVEN.mat')
+
+%load('pbeMasterprototype_FOURMAPS.mat')
+
+ load('pbeMasterprototype_FOURMAPSold.mat')
+
+ %  load('pbeMasterprototype_FOURMAPSoldtestmore.mat') --> this was latest?
+
+
+%load('pbeMasterprototype_OLDSEVEN.mat')
+
+%load('pbeMasterprototype_NEWnoW.mat')
+
+%%
+% 1 = all
+% 2 = all without inbound reverse
+% 3 = linear only
+% 4 = linear only without inbound
+% 5 = 2d only?
+mapfilter = 1;
+%FILTERING and trimming THE AGGREGATE BY PROB THRESH AND MAKE THE NUMSTEPS, WEIGHTED COR AND COR for SKEL V2
+
+
+%1 = past current future must be corr
+%2 = past and curr correct - allows future error
+%3 = past and curr correct - future is wrong
+behavfilt = 1;
+
+
+flipCOR4INBOUND = 0; %KEEP NATURAL FOR THIS CLASSIFICATION SUMMARY BECAUSE JUST INBOUND AND OUTBOUND
+
+pbeMaster.linearSkelThreshTrimv2 = [];
+pbeMaster.numstepsv2 = [];
+pbeMaster.weightcorv2 = [];
+pbeMaster.corv2 = [];
+
+probthresh = 0.01;
+corthr = 0.8;
+stpthr = 6;
+
+for rip = 1 : size(pbeMaster.decodeLM_F,1)
+    for map =1:12
+        thresholdmap = pbeMaster.linearSkelsv2{rip,map}(:,1)>probthresh;
+        rip2trim = pbeMaster.linearSkelsv2{rip,map}(thresholdmap,:);
+        for h = 1:(size(rip2trim,1)-1)
+
+            if rip2trim(h+1,2)- rip2trim(h,2) == 0
+                rip2trim(h,2) = 800;
+            end
+
+        end
+
+
+        rip2trim(rip2trim(:,2) == 800,:) = [];
+
+        pbeMaster.linearSkelThreshTrimv2{rip,map} = rip2trim;
+    end
+end
+
+for rip = 1 : size(pbeMaster.decodeLM_F,1)
+
+    for map =1:12
+
+        rip2measure = [];
+
+        rip2measure =  pbeMaster.linearSkelThreshTrimv2{rip,map};
+
+        numsteps = size(rip2measure,1);
+
+        pbeMaster.numstepsv2(rip,map) = numsteps;
+
+        data = rip2measure;
+
+        weights = data(:, 1); % First column as weights
+        values = data(:, 2);  % Second column as data values
+        ranks = (1:numsteps)';   % Third column as ranks (order)
+
+        % Step 1: Calculate weighted mean of ranks
+        weightedMeanRanks = sum(weights .* ranks) / sum(weights);
+
+        % Step 2: Calculate weighted covariance
+        weightedCovariance = sum(weights .* (ranks - weightedMeanRanks) .* (values - mean(values))) / sum(weights);
+
+        % Step 3: Calculate weighted variances
+        weightedVarianceRanks = sum(weights .* (ranks - weightedMeanRanks) .* (ranks - weightedMeanRanks)) / sum(weights);
+        weightedVarianceValues = sum(weights .* (values - mean(values)) .* (values - mean(values))) / sum(weights);
+
+        % Step 4: Calculate weighted Spearman correlation
+        weightedSpearmanCorrelation = weightedCovariance / sqrt(weightedVarianceRanks * weightedVarianceValues);
+
+        % % Display the result
+        % fprintf('Weighted Spearman Correlation: %.4f\n', weightedSpearmanCorrelation);
+
+        if numsteps > 3 % only runs if you have at least 4 steps -otherwise fill with empty value
+
+
+            if flipCOR4INBOUND == 1
+                %
+                % THIS PART IS FOR FLIPPING THE INBOUND CORRELATIONS TO BE
+                % POSITIVE FOR GOING INBOUND - FOR THE LEFT RIGHT SCORING I
+                % THINK WE WANT TO SKIP THIS SO ALL POSITIVE IS GOING
+                % 'OUTBOUND"
+
+                if map == 5 || map == 7 || map == 9 % this flips the inbound correlations to be positive going the correct direction;
+
+                    pbeMaster.weightcorv2(rip,map) =  weightedSpearmanCorrelation * (-1) ;
+
+                    pbeMaster.corv2(rip,map) =  corr(values,ranks) * (-1) ;
+
+                else
+                    pbeMaster.weightcorv2(rip,map) =  weightedSpearmanCorrelation;
+
+                    pbeMaster.corv2(rip,map) =  corr(values,ranks);
+                end
+
+            else
+
+
+                % so this part keeps all map correlations positive if moving
+                % OUTBOUND
+                pbeMaster.weightcorv2(rip,map) =  weightedSpearmanCorrelation;
+
+                pbeMaster.corv2(rip,map) =  corr(values,ranks);
+
+            end
+
+
+        else
+
+            pbeMaster.weightcorv2(rip,map) =  0;
+
+            pbeMaster.corv2(rip,map) =  0 ;
+        end
+
+
+    end
+end
+
+
+
+
+clear trajEvents trajEventsTestRight trajEventsCleaned
+
+% corthr = 0.8;
+% stpthr = 6;
+
+
+
+%tempct = pbeMaster.corv2  > corthr; % filter events that are larger than the correlation threshold
+tempct = pbeMaster.weightcorv2  > corthr; % filter events that are larger than the correlation threshold
+tempst = pbeMaster.numstepsv2 > stpthr; % filter events that are larger than the step threshold
+
+
+
+sandwichpre = tempct+tempst;
+
+sandwich = sandwichpre>1;
+
+[ripple map] = find(sandwich==1);
+
+trajEvents(:,1) = ripple; %ripple number
+trajEvents(:,2) = map;
+
+disp(['thresholds --- corval> ' num2str(corthr) '  stepnum >' num2str(stpthr)])
+disp(' ')
+
+ratsessions = {[1:5], [6:9], [10:15] , [16]};
+
+ratcheck = [1:3];
+% ratcheck = [1:4];
+
+for ratstats = 1:3;
+    %for ratstats = 1:4;
+
+    for ratsession = ratsessions{ratstats};
+
+
+        clear trajEventsFilt trajEventsFilt2 trajEventsLeft trajEventsRight
+
+
+        switch behavfilt
+            case 1
+                testfilt = (pbeMaster.trialChoice(trajEvents(:,1)) == 2)... made at the center
+                    &  (pbeMaster.trialCorr(trajEvents(:,1)) == 1)... during a correct choice
+                    & (pbeMaster.prevCorr(trajEvents(:,1)) == 1)... last trial was correct
+                    & (pbeMaster.nextCorr(trajEvents(:,1)) == 1)... next trial is correct
+                    & (pbeMaster.ratsession(trajEvents(:,1)) == ratsession); % is in the session we are checking
+
+            case 2
+                testfilt = (pbeMaster.trialChoice(trajEvents(:,1)) == 2)... made at the center
+                    &  (pbeMaster.trialCorr(trajEvents(:,1)) == 1)... during a correct choice
+                    & (pbeMaster.prevCorr(trajEvents(:,1)) == 1)... last trial was correct
+                    & (pbeMaster.ratsession(trajEvents(:,1)) == ratsession); % is in the session we are checking
+
+            case 3
+                testfilt = (pbeMaster.trialChoice(trajEvents(:,1)) == 2)... made at the center
+                    &  (pbeMaster.trialCorr(trajEvents(:,1)) == 1)... during a correct choice
+                    & (pbeMaster.prevCorr(trajEvents(:,1)) == 1)... last trial was correct
+                    & (pbeMaster.nextCorr(trajEvents(:,1)) == 0)... next trial is wrong
+                    & (pbeMaster.ratsession(trajEvents(:,1)) == ratsession); % is in the session we are checking
+        end
+
+        trajEventsFilt = trajEvents(testfilt,:); % trajEvents filtered by conditions
+
+        switch mapfilter
+            case 1 % 4 5 8 9
+                trajEventsFilt2 = trajEventsFilt(ismember( trajEventsFilt(:,2),[4 5 8 9 10 12]),:); %filtered trajectory events with left or right outbound predictions
+                % 4 5
+                trajEventsLeftfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[ 4 5 10])); % the left predict trajevents
+                % 8 9
+                trajEventsRightfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[ 8 9 12])); % the right predict trajevents
+
+
+
+            case 2
+                trajEventsFilt2 = trajEventsFilt(ismember( trajEventsFilt(:,2),[ 5  9 10 12]),:); %filtered trajectory events with left or right outbound predictions
+                % 4 5
+                trajEventsLeftfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[  5 10])); % the left predict trajevents
+                % 8 9
+                trajEventsRightfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[  9 12])); % the right predict trajevents
+
+            case 3
+                trajEventsFilt2 = trajEventsFilt(ismember( trajEventsFilt(:,2),[ 4 5  8 9 ]),:); %filtered trajectory events with left or right outbound predictions
+                % 4 5
+                trajEventsLeftfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[  4 5])); % the left predict trajevents
+                % 8 9
+                trajEventsRightfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[ 8 9 ])); % the right predict trajevents
+
+            case 4
+
+
+                trajEventsFilt2 = trajEventsFilt(ismember( trajEventsFilt(:,2),[  5  9 ]),:); %filtered trajectory events with left or right outbound predictions
+                % 4 5
+                trajEventsLeftfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[   5])); % the left predict trajevents
+                % 8 9
+                trajEventsRightfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[ 9 ])); % the right predict trajevents
+
+            case 5
+
+
+                trajEventsFilt2 = trajEventsFilt(ismember( trajEventsFilt(:,2),[ 10 12 ]),:); %filtered trajectory events with left or right outbound predictions
+                % 4 5
+                trajEventsLeftfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[   10])); % the left predict trajevents
+                % 8 9
+                trajEventsRightfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[ 12 ])); % the right predict trajevents
+
+        end
+
+
+        if ~isempty(trajEventsLeftfull)
+            trajEventsLeft = unique(trajEventsLeftfull(:,1)); % this makes sure we don't count an event twice - this would happen if counts in 4&5 and 8&9 - I hope unlikely across predictions because if so would be important to know
+
+        else
+            trajEventsLeft = []; % makes empty if empty
+        end
+
+
+        if ~isempty(trajEventsRightfull)
+            trajEventsRight = unique(trajEventsRightfull(:,1));
+        else
+            trajEventsRight = [];
+        end
+
+
+
+        %
+        % fill in the second column the next choice
+        if ~isempty(trajEventsLeft)
+            trajEventsLeft(:,2) = pbeMaster.nextChoice(trajEventsLeft(:,1));
+            leftscorecorrect = sum((trajEventsLeft(:,2) ==1));
+        else
+            leftscorecorrect = [];
+        end
+
+        if ~isempty(trajEventsRight)
+            trajEventsRight(:,2) = pbeMaster.nextChoice(trajEventsRight(:,1));
+            rightscorecorrect = sum((trajEventsRight(:,2) ==3));
+        else
+            rightscorecorrect =[];
+        end
+
+
+
+
+        %
+        totalcorrect = [leftscorecorrect; rightscorecorrect;];
+
+
+        performance = (sum(totalcorrect)/size([trajEventsLeft ; trajEventsRight],1)*100);
+
+        disp(['session ' num2str(ratsession)  '   ' pbeMaster.sessionID{ratsession} '    ' num2str(sum(totalcorrect)) ' of ' num2str(size([trajEventsLeft ; trajEventsRight],1))  ' scored with correct predictions = ' num2str(performance) '%'])
+
+    end
+
+
+    for rat = ratstats;
+
+
+        clear trajEventsFilt trajEventsFilt2 trajEventsLeft* trajEventsRight*
+
+
+        switch behavfilt
+
+            case 1
+                testfilt = (pbeMaster.trialChoice(trajEvents(:,1)) == 2)... made at the center
+                    &  (pbeMaster.trialCorr(trajEvents(:,1)) == 1)... during a correct choice
+                    & (pbeMaster.prevCorr(trajEvents(:,1)) == 1)... last trial was correct
+                    & (pbeMaster.nextCorr(trajEvents(:,1)) == 1)... next trial is correct
+                    & (pbeMaster.rat(trajEvents(:,1)) == rat); % for the rat we are checking
+
+            case 2
+                testfilt = (pbeMaster.trialChoice(trajEvents(:,1)) == 2)... made at the center
+                    &  (pbeMaster.trialCorr(trajEvents(:,1)) == 1)... during a correct choice
+                    & (pbeMaster.prevCorr(trajEvents(:,1)) == 1)... last trial was correct
+                    & (pbeMaster.rat(trajEvents(:,1)) == rat); % for the rat we are checking
+
+            case 3
+                testfilt = (pbeMaster.trialChoice(trajEvents(:,1)) == 2)... made at the center
+                    &  (pbeMaster.trialCorr(trajEvents(:,1)) == 1)... during a correct choice
+                    & (pbeMaster.prevCorr(trajEvents(:,1)) == 1)... last trial was correct
+                    & (pbeMaster.nextCorr(trajEvents(:,1)) == 0)... next trial is wrong
+                    & (pbeMaster.rat(trajEvents(:,1)) == rat); % for the rat we are checking
+        end
+
+
+        trajEventsFilt = trajEvents(testfilt,:); % trajEvents filtered by conditions
+
+
+
+
+        % trajEventsFilt2 = trajEventsFilt(ismember( trajEventsFilt(:,2),[ 4 5 8 9 10 12]),:); %filtered trajectory events with left or right outbound predictions
+        %
+        % trajEventsLeftfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[ 4 5 10])); % the left predict trajevents
+        %
+        % trajEventsRightfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[ 8 9 12])); % the right predict trajevents
+        %
+        %
+
+        %   trajEventsFilt2 = trajEventsFilt(ismember( trajEventsFilt(:,2),[  5  9 10 12]),:); %filtered trajectory events with left or right outbound predictions
+        %
+        % trajEventsLeftfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[  5 10])); % the left predict trajevents
+        %
+        % trajEventsRightfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[  9 12])); % the right predict trajevents
+        %
+
+
+        switch mapfilter
+            case 1 % 4 5 8 9
+                trajEventsFilt2 = trajEventsFilt(ismember( trajEventsFilt(:,2),[4 5 8 9 10 12]),:); %filtered trajectory events with left or right outbound predictions
+                % 4 5
+                trajEventsLeftfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[ 4 5 10])); % the left predict trajevents
+                % 8 9
+                trajEventsRightfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[ 8 9 12])); % the right predict trajevents
+
+
+
+            case 2
+                trajEventsFilt2 = trajEventsFilt(ismember( trajEventsFilt(:,2),[ 5  9 10 12]),:); %filtered trajectory events with left or right outbound predictions
+                % 4 5
+                trajEventsLeftfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[  5 10])); % the left predict trajevents
+                % 8 9
+                trajEventsRightfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[  9 12])); % the right predict trajevents
+
+            case 3
+                trajEventsFilt2 = trajEventsFilt(ismember( trajEventsFilt(:,2),[ 4 5  8 9 ]),:); %filtered trajectory events with left or right outbound predictions
+                % 4 5
+                trajEventsLeftfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[  4 5])); % the left predict trajevents
+                % 8 9
+                trajEventsRightfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[ 8 9 ])); % the right predict trajevents
+
+            case 4
+
+
+                trajEventsFilt2 = trajEventsFilt(ismember( trajEventsFilt(:,2),[  5  9 ]),:); %filtered trajectory events with left or right outbound predictions
+                % 4 5
+                trajEventsLeftfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[   5])); % the left predict trajevents
+                % 8 9
+                trajEventsRightfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[ 9 ])); % the right predict trajevents
+
+            case 5
+
+
+                trajEventsFilt2 = trajEventsFilt(ismember( trajEventsFilt(:,2),[ 10 12 ]),:); %filtered trajectory events with left or right outbound predictions
+                % 4 5
+                trajEventsLeftfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[   10])); % the left predict trajevents
+                % 8 9
+                trajEventsRightfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[ 12 ])); % the right predict trajevents
+        end
+
+
+
+
+        if ~isempty(trajEventsLeftfull)
+            trajEventsLeft = unique(trajEventsLeftfull(:,1));
+        else
+            trajEventsLeft = [];
+        end
+
+
+        if ~isempty(trajEventsRightfull)
+            trajEventsRight = unique(trajEventsRightfull(:,1));
+        else
+            trajEventsRight = [];
+        end
+
+
+
+        %
+        % fill in the second column the next choice
+        if ~isempty(trajEventsLeft)
+            trajEventsLeft(:,2) = pbeMaster.nextChoice(trajEventsLeft(:,1));
+            leftscorecorrect = sum((trajEventsLeft(:,2) ==1));
+        else
+            leftscorecorrect = [];
+        end
+
+        if ~isempty(trajEventsRight)
+            trajEventsRight(:,2) = pbeMaster.nextChoice(trajEventsRight(:,1));
+            rightscorecorrect = sum((trajEventsRight(:,2) ==3));
+        else
+            rightscorecorrect =[];
+        end
+
+
+
+
+        %
+        totalcorrect = [leftscorecorrect; rightscorecorrect;];
+
+
+        performance = (sum(totalcorrect)/size([trajEventsLeft ; trajEventsRight],1)*100);
+        disp(['                     rat ' num2str(rat)  '     ' num2str(sum(totalcorrect)) ' of ' num2str(size([trajEventsLeft ; trajEventsRight],1))  ' scored with correct predictions = ' num2str(performance) '%'])
+        disp(' ')
+    end
+
+end
+
+
+
+
+
+clear trajEventsFilt trajEventsFilt2 trajEventsLeft* trajEventsRight*
+
+
+switch behavfilt
+    case 1
+        testfilt = (pbeMaster.trialChoice(trajEvents(:,1)) == 2)...made at the center
+            &  (pbeMaster.trialCorr(trajEvents(:,1)) == 1)...  during a correct choice
+            & (pbeMaster.prevCorr(trajEvents(:,1)) == 1)...last trial was correct
+            & (pbeMaster.nextCorr(trajEvents(:,1)) == 1); % next trial is correct
+
+    case 2
+        testfilt = (pbeMaster.trialChoice(trajEvents(:,1)) == 2)...made at the center
+            &  (pbeMaster.trialCorr(trajEvents(:,1)) == 1)...  during a correct choice
+            & (pbeMaster.prevCorr(trajEvents(:,1)) == 1) ;%last trial was correct
+
+    case 3
+        testfilt = (pbeMaster.trialChoice(trajEvents(:,1)) == 2)...made at the center
+            &  (pbeMaster.trialCorr(trajEvents(:,1)) == 1)...  during a correct choice
+            & (pbeMaster.prevCorr(trajEvents(:,1)) == 1)...last trial was correct
+            & (pbeMaster.nextCorr(trajEvents(:,1)) == 0); % next trial is wrong
+end
+
+trajEventsFilt = trajEvents(testfilt,:); % trajEvents filtered by conditions
+
+
+
+% trajEventsFilt2 = trajEventsFilt(ismember( trajEventsFilt(:,2),[ 4 5 8 9 10 12]),:); %filtered trajectory events with left or right outbound predictions
+%
+% trajEventsLeftfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[4 5 10]),:); % the left predict trajevents
+%
+% trajEventsRightfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[8 9  12]),:); % the right predict trajevents
+
+
+% trajEventsFilt2 = trajEventsFilt(ismember( trajEventsFilt(:,2),[ 5 9 10 12]),:); %filtered trajectory events with left or right outbound predictions
+%
+%  trajEventsLeftfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[ 5 10]),:); % the left predict trajevents
+%
+%  trajEventsRightfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[ 9  12]),:); % the right predict trajevents
+
+switch  mapfilter
+    case 1 % 4 5 8 9
+        trajEventsFilt2 = trajEventsFilt(ismember( trajEventsFilt(:,2),[4 5 8 9 10 12]),:); %filtered trajectory events with left or right outbound predictions
+        % 4 5
+        trajEventsLeftfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[ 4 5 10])); % the left predict trajevents
+        % 8 9
+        trajEventsRightfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[ 8 9 12])); % the right predict trajevents
+
+
+
+    case 2
+        trajEventsFilt2 = trajEventsFilt(ismember( trajEventsFilt(:,2),[ 5  9 10 12]),:); %filtered trajectory events with left or right outbound predictions
+        % 4 5
+        trajEventsLeftfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[  5 10])); % the left predict trajevents
+        % 8 9
+        trajEventsRightfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[  9 12])); % the right predict trajevents
+
+    case 3
+        trajEventsFilt2 = trajEventsFilt(ismember( trajEventsFilt(:,2),[ 4 5  8 9 ]),:); %filtered trajectory events with left or right outbound predictions
+        % 4 5
+        trajEventsLeftfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[  4 5])); % the left predict trajevents
+        % 8 9
+        trajEventsRightfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[ 8 9 ])); % the right predict trajevents
+
+    case 4
+
+
+        trajEventsFilt2 = trajEventsFilt(ismember( trajEventsFilt(:,2),[  5  9 ]),:); %filtered trajectory events with left or right outbound predictions
+        % 4 5
+        trajEventsLeftfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[   5])); % the left predict trajevents
+        % 8 9
+        trajEventsRightfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[ 9 ])); % the right predict trajevents
+
+    case 5
+
+
+        trajEventsFilt2 = trajEventsFilt(ismember( trajEventsFilt(:,2),[ 10 12 ]),:); %filtered trajectory events with left or right outbound predictions
+        % 4 5
+        trajEventsLeftfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[   10])); % the left predict trajevents
+        % 8 9
+        trajEventsRightfull = trajEventsFilt2(ismember(trajEventsFilt2(:,2),[ 12 ])); % the right predict trajevents
+end
+
+
+
+trajEventsLeft = unique(trajEventsLeftfull(:,1));
+trajEventsRight = unique(trajEventsRightfull(:,1));
+
+
+
+
+% fill in the second column the next choice
+trajEventsLeft(:,2) = pbeMaster.nextChoice(trajEventsLeft(:,1));
+
+trajEventsRight(:,2) = pbeMaster.nextChoice(trajEventsRight(:,1));
+
+
+
+%
+scored = [(trajEventsLeft(:,2) ==1); (trajEventsRight(:,2) ==3);];
+
+
+performance = (sum(scored)/length(scored)*100);
+
+
+disp([ ' ALL Rats =   ' num2str(sum(scored)) ' of ' num2str(length(scored)) ' scored with correct predictions = ' num2str(performance) '%'])
+disp(' ')
+
+
+
+%%
+
+% make list off of leftand right
+% %sorting through the Trajectory events and making a cell structure that has
+% %just the unique one and their maps that map a cut - so some can be
+% %multiple maps
+
+% look at left
+
+clear trajEventsTest trajEventsbyRip trajEventsbyMap
+
+trajEventsbyMap = trajEventsLeftfull;
+
+trajEventsbyRip = sortrows(trajEventsLeftfull);
+
+for f = 1:12;
+
+    mapLists{f,1} = find(trajEventsLeftfull(:,2) == f);
+end
+
+trajEventsTestLeft{1,1} = trajEventsbyRip(1,1);
+trajEventsTestLeft{1,2} = trajEventsbyRip(find(trajEventsbyRip(:,1) == trajEventsbyRip(1,1)),2);
+
+counter = 2;
+for j = 2:length(trajEventsbyRip)
+
+    if trajEventsbyRip(j,1) ~=  trajEventsbyRip(j-1,1)
+        trajEventsTestLeft{counter,1} = trajEventsbyRip(j,1);
+
+        trajEventsTestLeft{counter,2} = trajEventsbyRip(find(trajEventsbyRip(:,1) == trajEventsbyRip(j,1)),2);
+        counter = counter+1;
+    end
+end
+
+
+
+% look at right
+
+clear trajEventsTest trajEventsbyRip trajEventsbyMap
+
+trajEventsbyMap = trajEventsRightfull;
+
+trajEventsbyRip = sortrows(trajEventsRightfull);
+
+for f = 1:12;
+
+    mapLists{f,1} = find(trajEventsRightfull(:,2) == f);
+end
+
+trajEventsTestRight{1,1} = trajEventsbyRip(1,1);
+trajEventsTestRight{1,2} = trajEventsbyRip(find(trajEventsbyRip(:,1) == trajEventsbyRip(1,1)),2);
+
+counter = 2;
+for j = 2:length(trajEventsbyRip)
+
+    if trajEventsbyRip(j,1) ~=  trajEventsbyRip(j-1,1)
+        trajEventsTestRight{counter,1} = trajEventsbyRip(j,1);
+
+        trajEventsTestRight{counter,2} = trajEventsbyRip(find(trajEventsbyRip(:,1) == trajEventsbyRip(j,1)),2);
+        counter = counter+1;
+    end
+end
+
+
+
+
+trajEventsTest = [trajEventsTestLeft; trajEventsTestRight];
+
