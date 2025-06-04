@@ -1,0 +1,1347 @@
+%% MAKING DECODE OUTPUT ACROSS ALL RATS
+
+
+parameters = struct;
+
+parameters.listofdirects = {'/Users/lustigb10/Dropbox/CleanDataWork/Lucky/10_09'; ...
+    '/Users/lustigb10/Dropbox/CleanDataWork/Lucky/10_10'; ...
+    '/Users/lustigb10/Dropbox/CleanDataWork/Lucky/10_11'; ...
+    '/Users/lustigb10/Dropbox/CleanDataWork/Lucky/10_14'; ...
+    '/Users/lustigb10/Dropbox/CleanDataWork/Lucky/10_15';...
+    '/Users/lustigb10/Dropbox/CleanDataWork/Ned/10_11';...
+    '/Users/lustigb10/Dropbox/CleanDataWork/Ned/10_12';...
+    '/Users/lustigb10/Dropbox/CleanDataWork/Ned/10_13';...
+    '/Users/lustigb10/Dropbox/CleanDataWork/Ned/10_14';...
+    '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/11_28';...
+    '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/11_29'; ...
+    '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/11_30'; ...
+    '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/12_01'; ...
+    '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/12_02'; ...
+    '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/12_07'};
+
+% pbe detection
+parameters.pbeDetect.windowsize = 0.02;
+parameters.pbeDetect.binsize = 0.01; % <-----------# 1
+parameters.pbeDetect.sliding = 1;
+parameters.pbeDetect.muasmoothval = 5; %(for the matlab smooth function - moving average)
+
+% placefield building
+parameters.placefields.divXY = 6; %divides into the x/y coordinates  % <-----------# 2
+parameters.placefields.smoothVAL =  1; %sigma for the SmoothPix guassian kernel % <-----------# 3
+parameters.placefields.minSpeed = 50; %speed threshold
+
+% linearmap building
+parameters.linearmaps.divXY = 10; %divides into the projected linear coordinates <-----------# 4
+parameters.linearmaps.smoothVal = 1;% <-----------# 5
+parameters.linearmaps.minSpeed = 50; 
+
+% episodefield building
+parameters.episodefields.binsize = 125; %in milliseconds <-----------# 6
+parameters.episodefields.smoothVAL = 1; %sigma for the SmoothPix guassian kernel <-----------# 7
+
+
+for RAT = [1:15]
+% 
+         listofdirects = {'/Users/lustigb10/Dropbox/CleanDataWork/Lucky/10_09'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Lucky/10_10'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Lucky/10_11'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Lucky/10_14'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Lucky/10_15';...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Ned/10_11';...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Ned/10_12';...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Ned/10_13';...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Ned/10_14';...
+        '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/11_28';...
+        '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/11_29'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/11_30'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/12_01'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/12_02'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/12_07'};
+
+      cd(listofdirects{RAT});
+     clearvars -except RAT listofdirects parameters
+
+    fprintf('starting RAT %g \n',RAT);
+
+%% loading stuff
+
+load rec01_BehavElectrDataLFP % load the matlab data structure
+
+% parameters.pbeDetect.windowsize = 0.02;
+% parameters.pbeDetect.binsize = 0.01; % <-----------# 1
+% parameters.pbeDetect.sliding = 1;
+% parameters.pbeDetect.muasmoothval = 5; %(for the matlab smooth function - moving average)
+
+if parameters.pbeDetect.sliding == 1
+    slidechar = 's';
+    tbin2 = parameters.pbeDetect.binsize;
+    windowslideratio = parameters.pbeDetect.windowsize/parameters.pbeDetect.binsize ;
+    muasmoothval = parameters.pbeDetect.muasmoothval;
+    spikesName = sprintf('spwSpikes_tbin_%.3f_%c_%g_muaSM_%g.mat',tbin2,slidechar,windowslideratio,muasmoothval);
+end
+
+%load('spwSpikes_tbin_0.010_s_2_muaSM_5.mat')
+
+%load(spikesName);
+
+ load('spwSpikes_tbin_0.010_s_2_muaSM_2ntest1.mat')
+
+% parameters.linearmaps.divXY = 10; %divides into the projected linear coordinates
+% parameters.linearmaps.smoothVal = 1;
+% parameters.linearmaps.minSpeed = 50; 
+
+sixmapName = sprintf('sixmaps_SM_%g_bin_%02d_spd_%02d.mat',parameters.linearmaps.smoothVal,parameters.linearmaps.divXY,parameters.linearmaps.minSpeed);
+
+%load(sixmapName);
+
+% load('NEWarmMaps_SM_01_bin_10_spd_50.mat')
+load('NEWOLDarmMaps_SM_01_bin_10_spd_50.mat')
+
+%load('sixmaps_SM_1_bin_10_spd_50.mat')
+% load(sixmapName);
+
+load('Singlewheelmap_sm 1_bin125_cleaned.mat')
+
+
+% parameters.episodefields.binsize = 125; %in milliseconds
+% parameters.episodefields.smoothVAL = 1; %sigma for the SmoothPix guassian kernel
+
+
+%whlmapflname = sprintf('wheelmaps_sm%2g_bin%02d_cleaned.mat',parameters.episodefields.smoothVAL,parameters.episodefields.binsize);
+
+whlmapflname = sprintf('wheelmaps_sm%2g_bin%02d_cleanedSCALE.mat',parameters.episodefields.smoothVAL,parameters.episodefields.binsize);
+
+
+%load('wheelmaps_sm 1_bin125_cleaned.mat')
+load(whlmapflname);
+
+
+% %blanking out wheel maps OPTION
+% 
+% rightWheelMap = zeros(size(rightWheelMap,1),size(rightWheelMap,2));
+% centerWheelMap = zeros(size(centerWheelMap,1),size(centerWheelMap,2));
+% leftWheelMap = zeros(size(leftWheelMap,1),size(leftWheelMap,2));
+
+
+%blanking out wheel maps OPTION except make CENTER all wheelmap for seven
+%maps
+
+rightWheelMap = zeros(size(rightWheelMap,1),size(rightWheelMap,2));
+centerWheelMap = allWheelMap;
+leftWheelMap = zeros(size(leftWheelMap,1),size(leftWheelMap,2));
+
+
+% parameters.placefields.divXY = 6; %divides into the x/y coordinates
+% parameters.placefields.smoothVAL =  1; %sigma for the SmoothPix guassian kernel
+% parameters.placefields.minSpeed = 50; %speed threshold
+
+
+pfmapflname = sprintf('placefieldmaps_sm%02d_bin%02d_spd%02dcleaned.mat',parameters.placefields.smoothVAL,parameters.placefields.divXY,parameters.placefields.minSpeed);
+
+%load('placefieldmaps_sm01_bin06_spd50cleaned.mat')
+%load(pfmapflname)
+ load('placefieldmaps_sm50_bin06_spd50cleaned.mat')
+
+% populating variables % % % %
+
+
+placefieldmaps =   placefieldmaps(1:find(Clu.shank<33,1,'last'),:);
+
+ [Xsyze Ysyze] = size(binnedFR);
+
+ mapholder{13} = placefieldmaps;
+
+wheelmaplength = size(leftWheelMap,2);
+
+
+leftwheelmapsR = leftWheelMap(1:find(Clu.shank<33,1,'last'),1:wheelmaplength);
+centerwheelmapsR = centerWheelMap(1:find(Clu.shank<33,1,'last'),1:wheelmaplength);
+rightwheelmapsR = rightWheelMap(1:find(Clu.shank<33,1,'last'),1:wheelmaplength);
+
+allwheelmapsR = cat(2,leftwheelmapsR,centerwheelmapsR,rightwheelmapsR);
+
+mapholder{1} = leftwheelmapsR;
+mapholder{2} = centerwheelmapsR;
+mapholder{3} = rightwheelmapsR ;
+mapholder{10} = allwheelmapsR;
+
+
+%allwheelmapsR  = allwheelmapsR(1:find(Clu.shank<33,1,'last'),:);
+
+
+
+% armmaplength = size(sixfieldmapsold,3);
+% %binlength = 51; %for artie
+% 
+% leftarmIN = squeeze(sixfieldmapsold(:,1,:));
+% leftarmOUT = squeeze(sixfieldmapsold(:,2,:));
+% centerarmIN = squeeze(sixfieldmapsold(:,3,:));
+% centerarmOUT = squeeze(sixfieldmapsold(:,4,:));
+% rightarmIN= squeeze(sixfieldmapsold(:,5,:));
+% rightarmOUT = squeeze(sixfieldmapsold(:,6,:));
+% 
+
+
+
+% % OLD
+% armmaplength = size(sixfieldmaps,3);
+% %binlength = 51; %for artie
+% 
+% %OLD
+% leftarmIN = squeeze(sixfieldmaps(:,1,:));
+% leftarmOUT = squeeze(sixfieldmaps(:,2,:));
+% centerarmIN = squeeze(sixfieldmaps(:,3,:));
+% centerarmOUT = squeeze(sixfieldmaps(:,4,:));
+% rightarmIN = squeeze(sixfieldmaps(:,5,:));
+% rightarmOUT = squeeze(sixfieldmaps(:,6,:));
+
+% % NEW
+% % use new arm maps
+% leftarmIN = squeeze(armMaps(:,2,1,:)); %leftin
+% leftarmOUT = squeeze(armMaps(:,1,1,:));% leftout
+% centerarmIN = squeeze(armMaps(:,2,2,:)); %centin
+% centerarmOUT = squeeze(armMaps(:,1,2,:)); %centout
+% rightarmIN = squeeze(armMaps(:,2,3,:)); %rightin
+% rightarmOUT = squeeze(armMaps(:,1,3,:)); %rightout
+% 
+% armmaplength = size(leftarmIN,2);
+
+
+
+% % NEW WITH BIDIRECTIONAL ARMS  - BLANK OUT OUTBOUND
+
+leftarmIN = squeeze(armMaps(:,3,1,:)); %leftARM
+leftarmOUT = squeeze(armMaps(:,1,1,:)) .* 0;% leftout BLANKED
+centerarmIN = squeeze(armMaps(:,3,2,:)); %cent
+centerarmOUT = squeeze(armMaps(:,1,2,:)).* 0; %centout BLANKED
+rightarmIN = squeeze(armMaps(:,3,3,:)); %right 
+rightarmOUT = squeeze(armMaps(:,1,3,:)) .* 0; %rightout BLANKED
+ 
+armmaplength = size(leftarmIN,2);
+
+
+
+mapholder{4} = leftarmOUT(1:find(Clu.shank<33,1,'last'),:);
+mapholder{5} = leftarmIN(1:find(Clu.shank<33,1,'last'),:);
+mapholder{6} = centerarmOUT(1:find(Clu.shank<33,1,'last'),:);
+mapholder{7} = centerarmIN(1:find(Clu.shank<33,1,'last'),:);
+mapholder{8} = rightarmOUT(1:find(Clu.shank<33,1,'last'),:);
+mapholder{9} = rightarmIN(1:find(Clu.shank<33,1,'last'),:);
+
+
+mapnames = {'leftwheelmapsR'; 'centerwheelmapsR';'rightwheelmapsR';'leftarmOUT'; ...
+    'leftarmIN';'centerarmOUT';'centerarmIN'; 'rightarmOUT'; 'rightarmIN';};
+mapnameshort = {'LW';'CW';'RW';'LO';'LI';'CO';'CI';'RO';'RI';};
+
+% note this is where I switch the order of linear maps! sixfield is
+% IN-OUT-IN-OUT but here I switch it to OUT-IN-OUT-IN because I like this
+% order for viewing and seems more natural
+
+allarmmaps = cat(2,leftarmOUT,leftarmIN,centerarmOUT,centerarmIN,rightarmOUT,rightarmIN); 
+allarmmaps = allarmmaps(1:find(Clu.shank<33,1,'last'),:);
+
+mapholder{11} = allarmmaps;
+
+% % make decoded output for HPC
+MEGAMAPfull = cat(2,allwheelmapsR,allarmmaps);
+
+% % make decoded output for HPC
+
+MEGAMAP =   MEGAMAPfull(1:find(Clu.shank<33,1,'last'),:);
+
+mapholder{12} = MEGAMAP;
+
+% decoding all together and then saving each decoded output onto each
+% linear map separately % %
+
+tbin = 0.01;
+
+for j = 1:size(biglist,1)
+
+    %gets the spikes for the event
+    spikesperbin = [];spikesperbinfull = [];
+    spikesperbinfull = biglist{j};
+    spikesperbin = spikesperbinfull(1:find(Clu.shank<33,1,'last'),:);
+    r = size(spikesperbin,2);
+
+
+    for meep = 1:12
+        %decoded the spikes across a given map
+
+        DECODEMAP = mapholder{meep};
+        %decodeOUTPUT = [];
+
+        logpfmaps = []; sumpfmaps = [];  ppost = []; ppost_norm = [];
+        logpfmaps = log(DECODEMAP*tbin);
+        logpfmaps(find(logpfmaps == -Inf)) = -450;
+        sumpfmaps = tbin*sum(DECODEMAP);
+        firstlook = spikesperbin' * logpfmaps -repmat(sumpfmaps,r,1);
+        ppost = exp(firstlook);
+        ppost_norm = bsxfun(@times, ppost, 1./sum(ppost,2));
+
+        firstlooktranslateMEGA = reshape(ppost_norm,r,1,size(DECODEMAP,2)) ;
+        decodeOUTPUT{j,meep} = squeeze(firstlooktranslateMEGA(:,1,:));
+
+        %saving the decoded output across all maps
+    end
+
+
+    translated2dMap = [];
+
+    logpfmaps = log(mapholder{13}*tbin);
+    logpfmaps(find(logpfmaps == -Inf)) = -450;
+    sumpfmaps = tbin*sum(mapholder{13});
+    firstlook = spikesperbin' * logpfmaps -repmat(sumpfmaps,r,1);
+    ppost = exp(firstlook);
+    ppost_norm = bsxfun(@times, ppost, 1./sum(ppost,2));
+    translated2dMap = reshape(ppost_norm,r,Xsyze,Ysyze);
+    
+    %decodeOUTPUT{j,13} = translated2dMap; % COMMENT THIS OUT TO NOT SAVE THE DECODED MAP FRAMES IF SIZE IS AN ISSUE
+
+    clear peaktrX peaktrY peaktr2dval
+    for frame = 1:r;
+        tofindpeak = [];
+        clear xcoord ycoord f
+        tofindpeak = squeeze(translated2dMap(frame,:,:))';
+        [f xcoord] = max(max(tofindpeak));
+        [f ycoord] = max(max(tofindpeak'));
+        peaktr2dval(frame) = f;
+        peaktrX(frame) = xcoord;
+        peaktrY(frame) = ycoord;
+    end
+
+    decodeOUTPUT{j,14} = [peaktr2dval',peaktrX',peaktrY']; %saves the value of the max prob and its x and y coordinates for each frame
+    
+    decodeOUTPUT2dmaxP{j,1} = [peaktr2dval'];
+    decodeOUTPUT2dX{j,1} = [peaktrX'];
+    decodeOUTPUT2dY{j,1} = [peaktrY'];
+
+end
+
+
+wheelmaplength = size(decodeOUTPUT{1,1},2);
+armmaplength = size(decodeOUTPUT{1,4},2);
+
+wheelmapcounts = 1:wheelmaplength:(wheelmaplength*3);
+
+armmapcounts = 1:armmaplength:(armmaplength*6);
+
+
+for j = 1:size(decodeOUTPUT,1)
+
+%extracts when separate
+    for m = 1:3;
+        decodeOUT_S{j,m} = decodeOUTPUT{j,10}(:,wheelmapcounts(m):wheelmapcounts(m)+(wheelmaplength-1));
+    end
+
+    for m = 1:6;
+        decodeOUT_S{j,m+3} = decodeOUTPUT{j,11}(:,armmapcounts(m):armmapcounts(m)+(armmaplength-1));
+    end
+
+
+%extracts when together
+
+    for m = 1:3;
+       decodeOUT_F{j,m} = decodeOUTPUT{j,12}(:,wheelmapcounts(m):wheelmapcounts(m)+(wheelmaplength-1));
+    end
+
+ 
+    for m = 1:6;
+        decodeOUT_F{j,m+3} = decodeOUTPUT{j,12}(:,armmapcounts(m)+(wheelmaplength *3):armmapcounts(m)+(wheelmaplength *3)+(armmaplength-1));
+    end
+
+
+   decodeOUTPUTi = decodeOUTPUT(:,1:9);
+
+end
+
+
+
+
+% % parameters.pbeDetect.binsize = 0.01; % <-----------# 1
+% % 
+% % % placefield building
+% % parameters.placefields.divXY = 6; %divides into the x/y coordinates  % <-----------# 2
+% % parameters.placefields.smoothVAL =  1; %sigma for the SmoothPix guassian kernel % <-----------# 3
+% % 
+% % % linearmap building
+% % parameters.linearmaps.divXY = 10; %divides into the projected linear coordinates <-----------# 4
+% % parameters.linearmaps.smoothVal = 1;% <-----------# 5
+% % 
+% % % episodefield building
+% % parameters.episodefields.binsize = 125; %in milliseconds <-----------# 6
+% % parameters.episodefields.smoothVAL = 1; %sigma for the SmoothPix guassian kernel <-----------# 7
+
+p1 = parameters.pbeDetect.binsize;
+p2 = parameters.placefields.divXY;
+p3 = parameters.placefields.smoothVAL;
+p4 = parameters.linearmaps.divXY;
+p5 = parameters.linearmaps.smoothVal;
+p6 = parameters.episodefields.binsize;
+p7 = parameters.episodefields.smoothVAL;
+
+
+decodeName = sprintf('decodeOUTPUT_SP_%g_PLE_B_%g_%g_%g_S_%g_%g_%gFOURMAPSoldtest.mat',p1,p2,p4,p6,p3,p5,p7);
+
+save(decodeName,'decodeOUT*','parameters');
+
+ fprintf('done with RAT %g \n',RAT);
+
+
+
+end
+
+
+
+
+
+
+
+
+
+
+    %% Make first PBE structure per rat
+
+
+% p1 = parameters.pbeDetect.binsize;
+% p2 = parameters.placefields.divXY;
+% p3 = parameters.placefields.smoothVAL;
+% p4 = parameters.linearmaps.divXY;
+% p5 = parameters.linearmaps.smoothVal;
+% p6 = parameters.episodefields.binsize;
+% p7 = parameters.episodefields.smoothVAL;
+
+% S P L E
+p1 = 0.01;
+p2 = 6;
+p3 = 10;
+p4 = 125;
+p5 = 1;
+p6 = 1;
+p7 = 1;
+
+                %NEWSEVEN
+
+                decodeName = sprintf('decodeOUTPUT_SP_%g_PLE_B_%g_%g_%g_S_%g_%g_%gFOURMAPSoldtest.mat',p1,p2,p3,p4,p5,p6,p7);
+
+% decodeName = sprintf('decodeOUTPUT_SP_%g_PLE_B_%g_%g_%g_S_%g_%g_%gNEWnoW.mat',p1,p2,p3,p4,p5,p6,p7);
+
+%decodeName = sprintf('decodeOUTPUT_SP_%g_PLE_B_%g_%g_%g_S_%g_%g_%gfixLM.mat',p1,p2,p3,p4,p5,p6,p7);
+
+% decodeName = sprintf('decodeOUTPUT_SPK_%gPFD_%g_S_%g_LMD_%g_S_%g_EFD_%g_S_%g.mat',p1,p2,p3,p4,p5,p6,p7);
+
+
+for RAT = [1:15]
+
+    listofdirects = {'/Users/lustigb10/Dropbox/CleanDataWork/Lucky/10_09'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Lucky/10_10'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Lucky/10_11'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Lucky/10_14'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Lucky/10_15';...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Ned/10_11';...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Ned/10_12';...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Ned/10_13';...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Ned/10_14';...
+        '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/11_28';...
+        '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/11_29'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/11_30'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/12_01'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/12_02'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/12_07'};
+
+    cd(listofdirects{RAT});
+    clearvars -except RAT listofdirects decodeName p*
+
+
+
+% load('decodeLM2.mat')  % - made from rippledecodework.m
+% load('decode2Dv2.mat') % made from twoDrippledecodework.m
+% load('spwSpikesv1.mat') %- made using spwSPIKESmakerv1.m
+load(decodeName)
+
+
+
+if parameters.pbeDetect.sliding == 1
+    slidechar = 's';
+    tbin2 = parameters.pbeDetect.binsize;
+    windowslideratio = parameters.pbeDetect.windowsize/parameters.pbeDetect.binsize ;
+    muasmoothval = parameters.pbeDetect.muasmoothval;
+    spikesName = sprintf('spwSpikes_tbin_%.3f_%c_%g_muaSM_%g.mat',tbin2,slidechar,windowslideratio,muasmoothval);
+end
+
+%load(spikesName);
+ load('spwSpikes_tbin_0.010_s_2_muaSM_2ntest1.mat')
+%% make past and future shifted index of trialmaster
+% gives extra two columns that have the future shifted choice in column 3
+% and if correct or error in colmns 4
+
+shifthold = trialMaster(2:end,1);
+shifthold = [shifthold;0];
+trialMaster(:,3) = shifthold;
+shifthold = trialMaster(2:end,2);
+shifthold = [shifthold;0];
+trialMaster(:,4) = shifthold;
+
+% added two more with the past choice and performance as well for column 5
+% and 6 
+
+shifthold = trialMaster(1:end-1,1);
+shifthold = [0;shifthold];
+trialMaster(:,5) = shifthold;
+shifthold = trialMaster(1:end-1,2);
+shifthold = [0;shifthold];
+trialMaster(:,6) = shifthold;
+
+%%
+
+trialID4rip(:,3) = trialMaster(trialID4rip(:,1),1); % gives an extra column that says what arm they are in for that trial
+trialID4rip(:,4) = trialMaster(trialID4rip(:,1),2); % gives an extra column that says is that trial was correct or error (most often correct - very rare to have ripple during error)
+trialID4rip(:,5) = trialMaster(trialID4rip(:,1),3); % future arm choice
+trialID4rip(:,6) = trialMaster(trialID4rip(:,1),4); % future arm performance
+trialID4rip(:,7) = trialMaster(trialID4rip(:,1),5); % past arm choice
+trialID4rip(:,8) = trialMaster(trialID4rip(:,1),6); % past arm performance
+%%
+
+
+pbe = struct;
+pbe.spikes = biglist;
+pbe.timemarks = rippletimemarkers2;
+pbe.trialnum = trialID4rip(:,1);
+pbe.trialcount = trialID4rip(:,2);  
+pbe.trialChoice = trialMaster(trialID4rip(:,1),1);
+pbe.trialCorr= trialMaster(trialID4rip(:,1),2); 
+pbe.prevChoice = trialMaster(trialID4rip(:,1),5);
+pbe.prevCorr = trialMaster(trialID4rip(:,1),6);
+pbe.nextChoice = trialMaster(trialID4rip(:,1),3);
+pbe.nextCorr = trialMaster(trialID4rip(:,1),4);
+
+%pbe.decode2dframes = decodelist2d{:,1};
+
+pbe.decode2dmaxprob = decodeOUTPUT2dmaxP;
+pbe.decode2dmaxXval = decodeOUTPUT2dX;
+pbe.decode2dmaxYval = decodeOUTPUT2dY;
+
+% pbe.decodeLM_I = decodeOUT_I; % this seems to be missng from recent run -
+% could be decodeOUTi ? but trying to move on without it
+
+pbe.decodeLM_S = decodeOUT_S;
+pbe.decodeLM_F = decodeOUT_F;
+
+
+
+
+pbeName = sprintf('pbe_%g_%g_%g_%g_%g_%g_%gFOURMAPSoldtest.mat',p1,p2,p3,p4,p5,p6,p7);
+
+save(pbeName,'pbe','parameters');
+RAT 
+end
+
+
+
+%% Making the MASTER PBE structure
+
+
+pbeMaster = struct;
+pbeMaster.ratID = {'Lucky'; 'Ned' ;'TinyTim';}
+pbeMaster.sessionID = [];
+
+pbeMaster.sessionMap = [];
+
+pbeMaster.rat = [];
+pbeMaster.ratsession = [];
+pbeMaster.trialnum = []
+pbeMaster.trialcount = [];
+pbeMaster.trialChoice = [];
+pbeMaster.trialCorr = [];
+pbeMaster.prevChoice = [];
+pbeMaster.prevCorr = [];
+pbeMaster.nextChoice = [];
+pbeMaster.nextCorr = [];
+pbeMaster.decode2dmaxprob = [];
+pbeMaster.decode2dmaxXval = [];
+pbeMaster.decode2dmaxYval = [];
+pbeMaster.decodeLM_I = [];
+pbeMaster.decodeLM_S = [];
+pbeMaster.decodeLM_F = [];
+
+p1 = 0.01;
+p2 = 6;
+p3 = 10;
+p4 = 125;
+p5 = 1;
+p6 = 1;
+p7 = 1;
+
+pbeName = sprintf('pbe_%g_%g_%g_%g_%g_%g_%gFOURMAPSoldtest.mat',p1,p2,p3,p4,p5,p6,p7);
+
+
+
+for RAT = [1:15]
+
+listofdirects = {'/Users/lustigb10/Dropbox/CleanDataWork/Lucky/10_09'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Lucky/10_10'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Lucky/10_11'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Lucky/10_14'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Lucky/10_15';...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Ned/10_11';...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Ned/10_12';...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Ned/10_13';...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Ned/10_14';...
+        '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/11_28';...
+        '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/11_29'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/11_30'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/12_01'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/12_02'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/12_07'};
+
+
+
+    cd(listofdirects{RAT});
+    clearvars -except RAT listofdirects pbeMaster pbeName p*
+   
+    load(pbeName)
+    
+   numberofpbe = length(pbe.spikes);
+
+   % populate rat label : 1 = Lucky; 2 = Ned; 3 = Tim
+   if ismember(RAT,[1:5])
+
+       pbeMaster.rat = [pbeMaster.rat; ones(numberofpbe,1);]; % rat #1 = lucky
+
+   elseif ismember(RAT,[6:9])
+
+       pbeMaster.rat = [pbeMaster.rat; ones(numberofpbe,1)*2;]; % rat #2 = ned
+
+   elseif ismember(RAT,[10:15])
+
+       pbeMaster.rat = [pbeMaster.rat; ones(numberofpbe,1)*3;]; % rat 3 = tim
+
+   end
+
+   %populate session label - numberted 1:15
+   pbeMaster.ratsession = [pbeMaster.ratsession; ones(numberofpbe,1)*RAT;];
+
+   pbeMaster.trialnum = [pbeMaster.trialnum; pbe.trialnum;];
+   pbeMaster.trialcount = [pbeMaster.trialcount; pbe.trialcount;];
+   pbeMaster.trialChoice = [pbeMaster.trialChoice; pbe.trialChoice;];
+   pbeMaster.trialCorr = [pbeMaster.trialCorr; pbe.trialCorr;];
+   pbeMaster.prevChoice = [pbeMaster.prevChoice; pbe.prevChoice;];
+   pbeMaster.prevCorr = [pbeMaster.prevCorr; pbe.prevCorr];
+   pbeMaster.nextChoice = [pbeMaster.nextChoice; pbe.nextChoice;];
+   pbeMaster.nextCorr = [pbeMaster.nextCorr; pbe.nextCorr;];
+
+   pbeMaster.decode2dmaxprob = [pbeMaster.decode2dmaxprob; pbe.decode2dmaxprob;];
+   pbeMaster.decode2dmaxXval = [pbeMaster.decode2dmaxXval; pbe.decode2dmaxXval;];
+   pbeMaster.decode2dmaxYval = [pbeMaster.decode2dmaxYval; pbe.decode2dmaxYval;];
+
+   %pbeMaster.decodeLM_I = [pbeMaster.decodeLM_I; pbe.decodeLM_I;];
+
+   pbeMaster.decodeLM_S = [pbeMaster.decodeLM_S; pbe.decodeLM_S;];
+   pbeMaster.decodeLM_F = [pbeMaster.decodeLM_F; pbe.decodeLM_F;];
+
+
+inputString = pwd;
+
+% Split the input string using '/' as the delimiter
+splitString = strsplit(inputString, '/');
+
+% Extract the desired substring
+desiredSubstring = strcat(splitString{end-1}, '/', splitString{end});
+
+% Replace underscore with a space in the desired substring
+desiredSubstring = strrep(desiredSubstring, '_', '-');
+
+%disp(desiredSubstring);
+
+pbeMaster.sessionID{RAT,1} = desiredSubstring;
+
+clear map
+pfmapflname = sprintf('placefieldmaps_sm%02d_bin%02d_spd%02dcleaned.mat',parameters.placefields.smoothVAL,parameters.placefields.divXY,parameters.placefields.minSpeed);
+
+%load(pfmapflname)
+ load('placefieldmaps_sm50_bin06_spd50cleaned.mat')
+
+pbeMaster.sessionMap{RAT,1} = map;
+
+
+RAT
+
+
+
+end
+
+
+pbeMaster.eventlength = cellfun(@(x) size(x,1), pbeMaster.decodeLM_F(:,1));
+
+
+pbeMasterName = sprintf('pbeMASTER_%g_%g_%g_%g_%g_%g_%gFOURMAPSoldtest.mat',p1,p2,p3,p4,p5,p6,p7);
+
+save(pbeMasterName,'pbeMaster','parameters');
+
+
+
+
+
+%% quantification of pbe events scraps and work for master
+
+% % basic corval and stepval maker
+% 
+% probthresh = 0.1;
+% 
+% for rip = 1: size(decodelistLM,1)
+% 
+%     for map =1:9
+%         rip2score = []; corval = []; numsteps = [];
+%         rip2score = decodelistLM{rip,map}; % gives the value and bin ID for the max in each timeframe
+%         [val ind] = max(rip2score');
+%         skeltest= ind(val>probthresh); %this gives you the ordered list of decoded bin indices that are above prob threshold
+%         numsteps = length(skeltest);
+% 
+%         if length(skeltest) > 2 % this is the minimum - no point looking at corval for two points
+%             if ismember(map,[5 7 9])
+%                 corval = corr(skeltest',(1:length(skeltest))','type','Spearman') * -1; % flips the sign for inbound maps
+%             else
+%                 corval = corr(skeltest',(1:length(skeltest))','type','Spearman');
+%             end
+%         else
+%             corval = 0;
+%         end
+% 
+%         %
+%         decodelistStep(rip,map) = numsteps;
+%         decodelistCorval(rip,map) = corval;
+%     end
+% 
+% end
+% 
+
+
+% %%  remove stationary points above the prob threshold to compute new
+% %  decodeLMstepcountTrim and decodeLMcorvalTrim
+% 
+% 
+% 
+% 
+% for trim  = 1:2
+%     probthresh = 0.01;
+% 
+%     for rip = 1 : size(pbeMaster.decodeLM_F,1)
+% 
+%         for map =1:9
+%             rip2score = []; corval = []; numsteps = [];
+%             rip2score = pbeMaster.decodeLM_F{rip,map}; % gives the value and bin ID for the max in each timeframe
+%             [val ind] = max(rip2score');
+%             skeltest= ind(val>probthresh); %this gives you the ordered list of decoded bin indices that are above prob threshold
+% 
+% 
+%             %trim the stationary steps
+% 
+%             if trim == 2
+%                 for h = 1:(length(skeltest)-1)
+% 
+%                     if skeltest(h+1)- skeltest(h) == 0
+%                         skeltest(h) = 800;
+%                     end
+% 
+%                 end
+% 
+%                 skeltest(skeltest== 800) = [];
+% 
+%             end
+% 
+%             numsteps = length(skeltest);
+% 
+%             if length(skeltest) > 2 % this is the minimum - no point looking at corval for two points
+%                 if ismember(map,[5 7 9])
+%                     corval = corr(skeltest',(1:length(skeltest))','type','Spearman') * -1; % flips the sign for inbound maps
+%                 else
+%                     corval = corr(skeltest',(1:length(skeltest))','type','Spearman');
+%                 end
+%             else
+%                 corval = 0;
+%             end
+% 
+%             if trim == 2
+%                 pbeMaster.decodeLM_F_stepT(rip,map) = numsteps;
+%                 pbeMaster.decodeLM_F_corT(rip,map) = corval;
+%             else
+% 
+%                 pbeMaster.decodeLM_F_step(rip,map) = numsteps;
+%                 pbeMaster.decodeLM_F_cor(rip,map) = corval;
+%             end
+%         end
+% 
+%     end
+% 
+% end
+% 
+% 
+% 
+% 
+% %% stationary trim for 2d
+% 
+% probthresh = 0.1;
+% distancestepmin = 1;
+% 
+% for rip = 1 : size(pbeMaster.decodeLM,1)
+%     xvals = [];
+%     yvals = [];
+%     amplitudevals = [];
+%     xvalsTrim = [];
+%     yvalsTrim = [];
+%     ampvals2Trim = [];
+% 
+% 
+%     amplitudevals = pbeMaster.decode2dmaxprob{rip}';
+%     xvals =  pbeMaster.decode2dmaxXval{rip}(amplitudevals>probthresh)';
+%     yvals = pbeMaster.decode2dmaxYval{rip}(amplitudevals>probthresh)';
+%     ampvals2 = amplitudevals(amplitudevals>probthresh)';
+% 
+%     if length(xvals)>2
+%         coordv = [xvals(1:end-1),yvals(1:end-1)];
+%         coordv2 = [xvals(2:end),yvals(2:end)];
+% 
+%         testdist = pdist2(coordv,coordv2);
+%         testdist2 = diag(testdist);
+% 
+%         testdist3 = [800;testdist2];
+% 
+%         xvalsTrim = xvals(testdist3>distancestepmin);
+%         yvalsTrim = yvals(testdist3>distancestepmin);
+%         ampvals2Trim = ampvals2(testdist3>distancestepmin);
+% 
+%         % pbeMaster.decode2dmaxprob2{rip,1} = ampvals2Trim;
+%         % pbeMaster.decode2dmaxXval2{rip,1} = xvalsTrim;
+%         % pbeMaster.decode2dmaxYval2{rip,1} = yvalsTrim;
+%     else
+% 
+%         % pbeMaster.decode2dmaxprob2{rip,1} = pbeMaster.decode2dmaxprob{rip,1};
+%         % pbeMaster.decode2dmaxXval2{rip,1} =   pbeMaster.decode2dmaxXval{rip,1};
+%         % pbeMaster.decode2dmaxYval2{rip,1} =  pbeMaster.decode2dmaxYval{rip,1};
+% 
+%         xvalsTrim = 1;
+%         yvalsTrim = 1;
+%         ampvals2Trim = 1;
+%     end
+% 
+% 
+% 
+% 
+%     pbeMaster.decode2dmaxprob2{rip,1} = ampvals2Trim';
+%     pbeMaster.decode2dmaxXval2{rip,1} = xvalsTrim';
+%     pbeMaster.decode2dmaxYval2{rip,1} = yvalsTrim';
+% 
+% 
+% end
+
+
+load pbeMasterTempTests.mat % make this load the appropriately named PBE structure from above
+%%
+load('workinglines2.mat')
+
+
+
+%% MY MODIFICATIONS this does the linear snapping - makes decode2dlinear structures
+
+
+% Define the lines pt, ct, rt
+% Ensure pt, ct, and rt are defined with appropriate coordinates
+% pt = ...; % Matrix with [x, y] coordinates
+% ct = ...; % Matrix with [x, y] coordinates
+% rt = ...; % Matrix with [x, y] coordinates
+
+% Initialize new structures for each line
+pbeMaster.decode2dLinear = cell(size(pbeMaster.rat,1), 1);
+pbeMaster.decode2dLinearLine = cell(size(pbeMaster.rat,1), 1);
+
+
+for numID = 1:size(pbeMaster.rat,1)
+    % Extract X, Y, and amplitude values for the current ID
+    subSeg2snapX = pbeMaster.decode2dmaxXval{numID};
+    subSeg2snapY = pbeMaster.decode2dmaxYval{numID};
+    subSeg2snapAmp = pbeMaster.decode2dmaxprob{numID};
+
+    % Calculate distances for each line
+    dists_pt = (bsxfun(@plus, subSeg2snapX, -pt(:,1)').^2 + bsxfun(@plus, subSeg2snapY, -pt(:,2)').^2);
+    dists_ct = (bsxfun(@plus, subSeg2snapX, -ct(:,1)').^2 + bsxfun(@plus, subSeg2snapY, -ct(:,2)').^2);
+    dists_rt = (bsxfun(@plus, subSeg2snapX, -rt(:,1)').^2 + bsxfun(@plus, subSeg2snapY, -rt(:,2)').^2);
+
+    % For each point, find the closest line
+    [min_dists, closest_line] = min([dists_pt, dists_ct, dists_rt], [], 2);
+
+    closest_lineID = zeros(1,size([dists_pt, dists_ct, dists_rt],2));
+    closest_lineID(1,1:size(dists_pt,2))  = 1;
+    closest_lineID(1,size(dists_pt,2)+1:size(dists_pt,2)*2)  = 2;
+    closest_lineID(1,(size(dists_pt,2)*2)+1:size(dists_pt,2)*3)  = 3;
+
+    closest_line2check = closest_lineID(closest_line);
+
+
+    % Initialize result variables
+    xref = zeros(size(subSeg2snapX)); % Array to hold snapped indices
+    lineSnap = zeros(size(subSeg2snapX)); % Array to hold line index for each point
+
+    % Determine the line and snapped index for each point
+    for i = 1:length(subSeg2snapX)
+        if closest_line2check(i) == 1
+            [~, xref(i)] = min(dists_pt(i,:));
+            lineSnap(i) = 1; % Snapped to pt
+        elseif closest_line2check(i) == 2
+            [~, xref(i)] = min(dists_ct(i,:));
+            lineSnap(i) = 2; % Snapped to ct
+        elseif closest_line2check(i) == 3
+            [~, xref(i)] = min(dists_rt(i,:));
+            lineSnap(i) = 3; % Snapped to rt
+        end
+    end
+
+    % Store results in pbeMaster
+    pbeMaster.decode2dLinear{numID,1} = xref;
+    pbeMaster.decode2dLinearLine{numID,1} = lineSnap; % Store which line each point was snapped to
+
+    % % Create masks for each line
+    % mask_pt = (lineSnap == 1);
+    % mask_ct = (lineSnap == 2);
+    % mask_rt = (lineSnap == 3);
+    % 
+    % % Store points snapped to each line in new structures
+    % pbeMaster.decode2dLinearLinePt{numID,1} = xref(mask_pt);
+    % pbeMaster.decode2dLinearLineCt{numID,1} = xref(mask_ct);
+    % pbeMaster.decode2dLinearLineRt{numID,1} = xref(mask_rt);
+    % 
+    % % Optionally store corresponding Y values
+    % pbeMaster.decode2dLinearLinePtY{numID,1} = lineSnap(mask_pt);
+    % pbeMaster.decode2dLinearLineCtY{numID,1} = lineSnap(mask_ct);
+    % pbeMaster.decode2dLinearLineRtY{numID,1} = lineSnap(mask_rt);
+    % 
+    % % Store amplitude values corresponding to each line
+    % pbeMaster.decode2dLinearLinePtAmp{numID,1} = subSeg2snapAmp(mask_pt);
+    % pbeMaster.decode2dLinearLineCtAmp{numID,1} = subSeg2snapAmp(mask_ct);
+    % pbeMaster.decode2dLinearLineRtAmp{numID,1} = subSeg2snapAmp(mask_rt);
+
+    % % Calculate correlation and step count for the overall linear structure
+    % if length(find(pbeMaster.decode2dmaxprob{numID}>0.1)) > 0
+    %     pbeMaster.decode2dLinearCorV(numID,1) = corr((1:length(pbeMaster.decode2dLinear{numID}(pbeMaster.decode2dmaxprob{numID}>0.1)))', ...
+    %         (pbeMaster.decode2dLinear{numID}(pbeMaster.decode2dmaxprob{numID}>0.1)), 'type', 'Spearman');
+    %     pbeMaster.decode2dLinearStepCount(numID,1) = length(find(pbeMaster.decode2dmaxprob{numID}>0.1));
+    % else
+    %     pbeMaster.decode2dLinearCorV(numID,1) = 0;
+    %     pbeMaster.decode2dLinearStepCount(numID,1) = 0;
+    % end
+    % 
+    % % Calculate correlation and step count for each line
+    % % For pt
+    % if length(find(pbeMaster.decode2dLinearLinePtAmp{numID} >0.1)) > 0
+    %     pbeMaster.decode2dLinearLinePtCorV(numID,1) = corr((1:length(pbeMaster.decode2dLinearLinePt{numID}(pbeMaster.decode2dLinearLinePtAmp{numID} >0.1)))', ...
+    %         pbeMaster.decode2dLinearLinePt{numID}(pbeMaster.decode2dLinearLinePtAmp{numID} >0.1), 'type', 'Spearman');
+    %     pbeMaster.decode2dLinearLinePtStepCount(numID,1) = length(pbeMaster.decode2dLinearLinePt{numID}(pbeMaster.decode2dLinearLinePtAmp{numID} >0.1));
+    % else
+    %     pbeMaster.decode2dLinearLinePtCorV(numID,1) = 0;
+    %     pbeMaster.decode2dLinearLinePtStepCount(numID,1) = 0;
+    % end
+    % 
+    % % For ct
+    % 
+    % if length(find(pbeMaster.decode2dLinearLineCtAmp{numID} > 0.1)) > 0
+    %     pbeMaster.decode2dLinearLineCtCorV(numID,1) = corr((1:length(pbeMaster.decode2dLinearLineCt{numID}(pbeMaster.decode2dLinearLineCtAmp{numID} > 0.1)))', ...
+    %         pbeMaster.decode2dLinearLineCt{numID}(pbeMaster.decode2dLinearLineCtAmp{numID} > 0.1), 'type', 'Spearman');
+    %     pbeMaster.decode2dLinearLineCtStepCount(numID,1) = length(pbeMaster.decode2dLinearLineCt{numID}(pbeMaster.decode2dLinearLineCtAmp{numID} > 0.1));
+    % else
+    %     pbeMaster.decode2dLinearLineCtCorV(numID,1) = 0;
+    %     pbeMaster.decode2dLinearLineCtStepCount(numID,1) = 0;
+    % end
+    % 
+    % % For rt
+    % if length(find(pbeMaster.decode2dLinearLineRtAmp{numID} > 0.1)) > 0
+    %     pbeMaster.decode2dLinearLineRtCorV(numID,1) = corr((1:length(pbeMaster.decode2dLinearLineRt{numID}(pbeMaster.decode2dLinearLineRtAmp{numID} > 0.1)))', ...
+    %         pbeMaster.decode2dLinearLineRt{numID}(pbeMaster.decode2dLinearLineRtAmp{numID} > 0.1), 'type', 'Spearman');
+    %     pbeMaster.decode2dLinearLineRtStepCount(numID,1) = length(pbeMaster.decode2dLinearLineRt{numID}(pbeMaster.decode2dLinearLineRtAmp{numID} > 0.1));
+    % else
+    %     pbeMaster.decode2dLinearLineRtCorV(numID,1) = 0;
+    %     pbeMaster.decode2dLinearLineRtStepCount(numID,1) = 0;
+    % end
+
+end
+
+%% OK I NEED TO FIX/CHANGE THIS SO IT TAKES THE MAX FROM THE ENTIRE POOL/ ALL MAPS AND THEN SAVES ONLY THE POINTS IN EACH MAP IF IT HAS A MAX (LIKE THE 2D) SO THE SUM OF THE POINTS CAN;T BE MORE THAN THE TOTAL FRAMES OF THE RIPPLE
+% making the skeleton struct for Linear Maps
+for rip = 1 : size(pbeMaster.decodeLM_F,1)
+    
+
+    for map =1:9
+        rip2score = []; corval = []; numsteps = []; val = []; ind = [];
+
+        rip2score = pbeMaster.decodeLM_F{rip,map}; % gives the value and bin ID for the max in each timeframe
+        [val ind] = max(rip2score');
+
+        pbeMaster.linearmapsSkel{rip,map} = [val',ind'];
+
+    end
+
+end
+
+%% this makes the linearskelv2 with the max from all - starts by making decodeLM_Fv2 then linearkskelv2
+
+wheelmaplength = size(pbeMaster.decodeLM_F{1,1},2);
+armmaplength = size(pbeMaster.decodeLM_F{1,4},2);
+wheelmapcounts = 1:wheelmaplength:(wheelmaplength*3);
+armmapcounts = 1:armmaplength:(armmaplength*6);
+
+for rip = 1 : size(pbeMaster.decodeLM_F,1)
+
+  
+        rip2score = []; val = []; ind = []; result = []; indicatorMatrix  = [];
+
+        rip2scoreSep = pbeMaster.decodeLM_F(rip,:); % pull decode output from each map
+        rip2score = [rip2scoreSep{:}];
+
+        [~, ind] = max(rip2score');
+
+
+        % Initialize indicator matrix with zeros
+        indicatorMatrix = zeros(size(rip2score));
+
+        % Set ones at the positions of the maximum values
+        for col = 1:size(rip2score, 1)
+            indicatorMatrix(col,ind(col)) = 1;
+        end
+
+        % Multiply the original matrix by the indicator matrix
+        result = rip2score .* indicatorMatrix;
+
+       for map =1:9
+
+           for m = 1:3;
+               pbeMaster.decodeLM_Fv2{rip,m} = result(:,wheelmapcounts(m):wheelmapcounts(m)+(wheelmaplength-1));
+           end
+
+
+           for m = 1:6;
+              pbeMaster.decodeLM_Fv2{rip,m+3} = result(:,armmapcounts(m)+(wheelmaplength *3):armmapcounts(m)+(wheelmaplength *3)+(armmaplength-1));
+           end
+
+        % pbeMaster.linearmapsSkel{rip,map} = [val',ind'];
+
+        end
+
+end
+
+for rip = 1 : size(pbeMaster.decodeLM_F,1)
+    
+
+    for map =1:9
+        rip2score = []; corval = []; numsteps = []; val = []; ind = [];
+
+        rip2score = pbeMaster.decodeLM_Fv2{rip,map}; % gives the value and bin ID for the max in each timeframe
+        [val ind] = max(rip2score');
+
+        pbeMaster.linearmapsSkelv2{rip,map} = [val',ind'];
+
+    end
+
+end
+%% this clears out the zero values from linearmapSkelv2 - so decodev2 has zeros but linearmapskelv2 is a .. you guessed it.. skeleton
+
+
+% Number of cells in the cell array
+numCells = numel(pbeMaster.linearmapsSkelv2);
+
+% Process each cell
+for i = 1:numCells
+    % Extract the matrix from the cell
+    matrix = pbeMaster.linearmapsSkelv2{i};
+    
+    % Remove rows where the values in the first column is zero
+    filteredMatrix = matrix(matrix(:, 1) ~= 0, :);
+    
+    % Update the cell with the filtered matrix
+    pbeMaster.linearmapsSkelv2{i} = filteredMatrix;
+end
+
+% Display the updated cell array
+% disp('Updated Cell Array:');
+% disp(pbeMaster.linearmapsSkelv2);
+
+
+
+%% making skeleton for 2d linearized
+
+for rip = 1 : size(pbeMaster.decodeLM_F,1)
+
+    for map = 1:3
+
+        rip2score = []; mask = []; corval = []; numsteps = []; val = []; ind = [];
+
+        mask = pbeMaster.decode2dLinearLine{rip} ==map;
+
+        val = pbeMaster.decode2dmaxprob{rip}(mask);
+        ind = pbeMaster.decode2dLinear{rip}(mask);
+
+        pbeMaster.linearmapsSkel2d{rip,map} = [val, ind];
+
+
+    end
+end
+
+
+%% NOW WE MAKE AND HAVE THE BIG AGGREGATED STRUCTURE - 12 MAPS - LW CW RW- LO LI CO CI RO RI - L2DL C2DL R2DL
+
+pbeMaster.linearSkels = [pbeMaster.linearmapsSkel,pbeMaster.linearmapsSkel2d];
+
+pbeMaster.linearSkelsv2 = [pbeMaster.linearmapsSkelv2,pbeMaster.linearmapsSkel2d];
+%%
+
+pbeMaster = rmfield(pbeMaster,{'decodeLM_I','decodeLM_S','linearmapsSkel','linearmapsSkel2d'});
+%% %%%%%%
+
+ clearvars -except pbeMaster parameters
+% HERE IS THE PART THAT HAS THE PBEMASTER THAT CAN BE WORKED WITH - MOST
+% RAW VERSION - FROM HERE ON WE CAN PLAY WITH AND APPLY:
+% PROB THRESHOLD - TRIMMING -THEN GET WEIGHTED AND NORM CORRELATION AND STEP NUMBER
+
+
+%%%%%%%
+
+%%
+save('pbeMasterprototype_FOURMAPSoldtest.mat')
+%%
+
+%save('pbeMasterprototype_v2.mat')
+
+%%
+% load('pbeMasterprototype.mat')
+
+load('pbeMasterprototype_v2.mat')
+
+
+
+
+%% %% FILTERING and trimming THE AGGREGATE BY PROB THRESH AND MAKE THE NUMSTEPS, WEIGHTED COR AND COR for SKEL (old ver skel1)
+
+
+flipCOR4INBOUND = 0;
+
+pbeMaster.linearSkelThreshTrim = [];
+pbeMaster.numsteps = [];
+pbeMaster.weightcor = [];
+pbeMaster.cor = [];
+
+probthresh = 0.01;
+corthr = 0.8;
+stpthr = 6;
+
+for rip = 1 : size(pbeMaster.decodeLM_F,1)
+    for map =1:12
+        thresholdmap = pbeMaster.linearSkels{rip,map}(:,1)>probthresh;
+        rip2trim = pbeMaster.linearSkels{rip,map}(thresholdmap,:);
+        for h = 1:(size(rip2trim,1)-1)
+
+            if rip2trim(h+1,2)- rip2trim(h,2) == 0
+                rip2trim(h,2) = 800;
+            end
+
+        end
+
+
+        rip2trim(rip2trim(:,2) == 800,:) = [];
+
+        pbeMaster.linearSkelThreshTrim{rip,map} = rip2trim;
+    end
+end
+
+for rip = 1 : size(pbeMaster.decodeLM_F,1)
+
+    for map =1:12
+
+        rip2measure = [];
+
+        rip2measure =  pbeMaster.linearSkelThreshTrim{rip,map};
+
+        numsteps = size(rip2measure,1);
+
+        pbeMaster.numsteps(rip,map) = numsteps;
+
+        data = rip2measure;
+
+        weights = data(:, 1); % First column as weights
+        values = data(:, 2);  % Second column as data values
+        ranks = (1:numsteps)';   % Third column as ranks (order)
+
+        % Step 1: Calculate weighted mean of ranks
+        weightedMeanRanks = sum(weights .* ranks) / sum(weights);
+
+        % Step 2: Calculate weighted covariance
+        weightedCovariance = sum(weights .* (ranks - weightedMeanRanks) .* (values - mean(values))) / sum(weights);
+
+        % Step 3: Calculate weighted variances
+        weightedVarianceRanks = sum(weights .* (ranks - weightedMeanRanks) .* (ranks - weightedMeanRanks)) / sum(weights);
+        weightedVarianceValues = sum(weights .* (values - mean(values)) .* (values - mean(values))) / sum(weights);
+
+        % Step 4: Calculate weighted Spearman correlation
+        weightedSpearmanCorrelation = weightedCovariance / sqrt(weightedVarianceRanks * weightedVarianceValues);
+
+        % % Display the result
+        % fprintf('Weighted Spearman Correlation: %.4f\n', weightedSpearmanCorrelation);
+
+        if numsteps > 3 % only runs if you have at least 4 steps -otherwise fill with empty value
+
+
+
+
+            if flipCOR4INBOUND ==1
+                % THIS PART IS FOR FLIPPING THE INBOUND CORRELATIONS TO BE
+                % POSITIVE FOR GOING INBOUND - FOR THE LEFT RIGHT SCORING I
+                % THINK WE WANT TO SKIP THIS SO ALL POSITIVE IS GOING
+                % 'OUTBOUND"
+                if map == 5 || map == 7 || map == 9 % this flips the inbound correlations to be positive going the correct direction;
+
+                    pbeMaster.weightcor(rip,map) =  weightedSpearmanCorrelation * (-1) ;
+
+                    pbeMaster.cor(rip,map) =  corr(values,ranks) * (-1) ;
+
+                else
+                    pbeMaster.weightcor(rip,map) =  weightedSpearmanCorrelation;
+
+                    pbeMaster.cor(rip,map) =  corr(values,ranks);
+                end
+
+            else
+
+
+                % so this part keeps all map correlations positive if moving
+                % OUTBOUND
+                pbeMaster.weightcor(rip,map) =  weightedSpearmanCorrelation;
+
+                pbeMaster.cor(rip,map) =  corr(values,ranks);
+            end
+
+        else
+
+            pbeMaster.weightcor(rip,map) =  0;
+
+            pbeMaster.cor(rip,map) =  0 ;
+        end
+
+
+    end
+end
+
+%%  %% %% FILTERING and trimming THE AGGREGATE BY PROB THRESH AND MAKE THE NUMSTEPS, WEIGHTED COR AND COR for SKEL V2
+
+
+% if scoring use 0 for ease of code - but if you are viewing or want to
+% track forward/reverse use 1
+flipCOR4INBOUND = 0;
+
+
+pbeMaster.linearSkelThreshTrimv2 = [];
+pbeMaster.numstepsv2 = [];
+pbeMaster.weightcorv2 = [];
+pbeMaster.corv2 = [];
+
+probthresh = 0.01;
+corthr = 0.8;
+stpthr = 6;
+
+for rip = 1 : size(pbeMaster.decodeLM_F,1)
+    for map =1:12
+        thresholdmap = pbeMaster.linearSkelsv2{rip,map}(:,1)>probthresh;
+        rip2trim = pbeMaster.linearSkelsv2{rip,map}(thresholdmap,:);
+        for h = 1:(size(rip2trim,1)-1)
+
+            if rip2trim(h+1,2)- rip2trim(h,2) == 0
+                rip2trim(h,2) = 800;
+            end
+
+        end
+
+
+        rip2trim(rip2trim(:,2) == 800,:) = [];
+
+        pbeMaster.linearSkelThreshTrimv2{rip,map} = rip2trim;
+    end
+end
+
+for rip = 1 : size(pbeMaster.decodeLM_F,1)
+
+    for map =1:12
+
+        rip2measure = [];
+
+        rip2measure =  pbeMaster.linearSkelThreshTrimv2{rip,map};
+
+        numsteps = size(rip2measure,1);
+
+        pbeMaster.numstepsv2(rip,map) = numsteps;
+
+        data = rip2measure;
+
+        weights = data(:, 1); % First column as weights
+        values = data(:, 2);  % Second column as data values
+        ranks = (1:numsteps)';   % Third column as ranks (order)
+
+        % Step 1: Calculate weighted mean of ranks
+        weightedMeanRanks = sum(weights .* ranks) / sum(weights);
+
+        % Step 2: Calculate weighted covariance
+        weightedCovariance = sum(weights .* (ranks - weightedMeanRanks) .* (values - mean(values))) / sum(weights);
+
+        % Step 3: Calculate weighted variances
+        weightedVarianceRanks = sum(weights .* (ranks - weightedMeanRanks) .* (ranks - weightedMeanRanks)) / sum(weights);
+        weightedVarianceValues = sum(weights .* (values - mean(values)) .* (values - mean(values))) / sum(weights);
+
+        % Step 4: Calculate weighted Spearman correlation
+        weightedSpearmanCorrelation = weightedCovariance / sqrt(weightedVarianceRanks * weightedVarianceValues);
+
+        % % Display the result
+        % fprintf('Weighted Spearman Correlation: %.4f\n', weightedSpearmanCorrelation);
+
+        if numsteps > 3 % only runs if you have at least 4 steps -otherwise fill with empty value
+
+            
+            if flipCOR4INBOUND == 1
+                %
+                % THIS PART IS FOR FLIPPING THE INBOUND CORRELATIONS TO BE
+                % POSITIVE FOR GOING INBOUND - FOR THE LEFT RIGHT SCORING I
+                % THINK WE WANT TO SKIP THIS SO ALL POSITIVE IS GOING
+                % 'OUTBOUND"
+
+                if map == 5 || map == 7 || map == 9 % this flips the inbound correlations to be positive going the correct direction;
+
+                    pbeMaster.weightcorv2(rip,map) =  weightedSpearmanCorrelation * (-1) ;
+
+                    pbeMaster.corv2(rip,map) =  corr(values,ranks) * (-1) ;
+
+                else
+                    pbeMaster.weightcorv2(rip,map) =  weightedSpearmanCorrelation;
+
+                    pbeMaster.corv2(rip,map) =  corr(values,ranks);
+                end
+
+            else
+
+
+                % so this part keeps all map correlations positive if moving
+                % OUTBOUND
+                pbeMaster.weightcorv2(rip,map) =  weightedSpearmanCorrelation;
+
+                pbeMaster.corv2(rip,map) =  corr(values,ranks);
+
+            end
+
+
+        else
+
+            pbeMaster.weightcorv2(rip,map) =  0;
+
+            pbeMaster.corv2(rip,map) =  0 ;
+        end
+
+
+    end
+end
+
+
+
+%%
+save('pbeMasterprototype_FOURMAPSoldtestmore.mat','-v7.3')
