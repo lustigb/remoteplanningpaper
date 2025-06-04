@@ -1,0 +1,99 @@
+%interactive browse function
+
+load rec01_BehavElectrDataLFP
+
+%%
+for k = 1:length(Laps.lapID);
+
+
+    UpCrossings(k) =  Laps.WhlLfpIndStartCW{k}(end).*(20000/1250); % this get's the start time of the last wheel run before doors open converted to 20k time for .res files
+
+end
+
+
+upcrossingsconvertback = UpCrossings*1250/20000;
+for k = 1:length(Laps.lapID);
+    upcrossingsconvertbackbylap(k) =  upcrossingsconvertback(k) - Laps.startLfpInd(k);
+end
+
+
+
+multiwheelrun = [];
+for h = 1:length(Laps.lapID);
+
+    % insert what you want to plot here with h being the variable that changes
+
+    signal = [];
+    signal = Laps.WhlSpeedCW(Laps.startLfpInd(h): Laps.endLfpInd(h));
+    chunkedsignal = [];
+    % Define a vector of signal
+
+
+    % Find the indices of all signal greater than 200
+    indices = find(signal > 200);
+
+    % Initialize variables to store the chunks
+    chunk_starts = [];
+    chunk_lengths = [];
+
+    % Initialize a variable to store the current chunk length
+    current_length = 0;
+
+    % Iterate through the indices
+    for i = 1:length(indices)
+        % If this is the first index or the difference between this index and the previous index is 1
+        if i == 1 || indices(i) - indices(i-1) == 1
+            % Increment the current chunk length
+            current_length = current_length + 1;
+        else
+            % If the current chunk length is greater than or equal to 5000
+            if current_length >= 5000
+                % Store the start index and length of the chunk
+                chunk_starts = [chunk_starts indices(i-current_length)];
+                chunk_lengths = [chunk_lengths current_length];
+                current_length = 1; % reset
+                % reset the current_length after storing the chunk
+            else
+                current_length = 1; % reset the current_length only if the chunk is not greater than or equal to 40
+            end
+        end
+    end
+
+    % Check if the last chunk is greater than or equal to 5000
+    if current_length >= 5000
+        % Store the start index and length of the chunk
+        chunk_starts = [chunk_starts indices(end-current_length+1)];
+        chunk_lengths = [chunk_lengths current_length];
+    end
+
+
+
+
+    % chunkedsignal = signal;
+    chunkedsignal = zeros(length(signal),1);
+    for j = 1:length(chunk_starts)
+        chunkedsignal(chunk_starts(j):chunk_starts(j) + chunk_lengths(j)) = 400;
+    end
+
+
+
+
+
+%
+
+    if find(chunk_starts<upcrossingsconvertbackbylap(h)) >= 1
+       
+       
+        multiwheelrun(h) = 1;
+    else
+        multiwheelrun(h) = 0;
+
+
+    end
+end
+
+
+clearvars -except multiwheelrun
+
+save('mutliwheelrunmarker.mat');
+
