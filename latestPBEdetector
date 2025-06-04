@@ -1,0 +1,372 @@
+%PBE DETECTOR SAVES BINNED SPIKE COUNTS FOR EVERY EVENT - CAN PLAY WITH HOW
+%THE PBES ARE DETECTED AND ALSO HOW SPIKES ARE ULTIMATELY BINNED -IE 20MS
+%SLIDING BY 10 OR 5MS ETC - ALSO INTERNEURONS IN FINAL STUFF ETC. 
+% note that old code has been taking the summed spikes (so MUA) and
+% smoothing that by 5 bins (50ms average window) and using this signal for
+% PBE detection. 
+
+
+%spikesName = sprintf('spwSpikes_tbin_%.3f_%c_%g_muaSM_%g.mat',tbin2,slidechar,windowslideratio,muasmoothval);
+
+    for RAT = [5:8 10:15]
+
+        listofdirects = {'/Users/lustigb10/Dropbox/CleanDataWork/Lucky/10_09'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Lucky/10_10'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Lucky/10_11'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Lucky/10_14'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Lucky/10_15';...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Ned/10_11';...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Ned/10_12';...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Ned/10_13';...
+        '/Users/lustigb10/Dropbox/CleanDataWork/Ned/10_14';...
+        '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/11_28';...
+        '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/11_29'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/11_30'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/12_01'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/12_02'; ...
+        '/Users/lustigb10/Dropbox/CleanDataWork/TinyTim/12_07'};
+
+      cd(listofdirects{RAT});
+     clearvars -except RAT listofdirects
+
+load rec01_BehavElectrDataLFP Spike Track Laps Clu trialMaster 
+ 
+
+checktriallengths = Laps.endLfpInd - cell2mat(Laps.WhlLfpIndEndCW)';
+
+trialstorun = setdiff(1:length(Laps.lapID),find(checktriallengths>170000)); % this is to avoid problems with resampling - excludes super long trial outliers - very rare
+
+
+
+for loopnum = trialstorun; % made process for all trials except the first and last (this doesn;t seem to be true anymore..)
+    %    tic
+    clearvars -except muasmoothval ripplecounter spwSpikes spwSpikes2 Spike Track Laps Clu trials rpl binnedFR loopnum sliding windowslideratio trialMaster  masterripplehold masterSPWdetectedmarker rippletimemarkers RAT listofdirects
+    
+    
+    tbin = 0.020;
+    tbin2 = 0.010;
+    
+    windowslideratio = tbin/tbin2;
+
+    muasmoothval = 2;   
+    
+    sliding = 1;
+    trial2lookat = loopnum;
+    
+    
+    
+%     wholetrialstart = Laps.startLfpInd(trial2lookat);
+    wholetrialstart = Laps.WhlLfpIndEndCW{trial2lookat}; % modified to make things shorter so resampling doesn't crash
+    wholetrialend = Laps.endLfpInd(trial2lookat);
+    
+    
+    
+    wholetrialstartadj2 = floor(wholetrialstart./(1250)*20000);
+    wholetrialendadj2 = floor(wholetrialend./(1250)*20000);
+    
+    
+    
+    %usefortrialasedges
+    startedge = wholetrialstartadj2;
+    endedge = wholetrialendadj2;
+    
+    clunumber = max(Spike.totclu);
+    
+    %forsliding
+    if sliding == 1
+        edges = startedge:tbin2*20000:endedge;
+    else
+        
+        edges = startedge:tbin*20000:endedge;
+    end
+    
+    
+    for k = 1:length(Clu.totClu);
+        spikes = Spike.res20kHz(find(Spike.totclu == k & Spike.res20kHz>startedge & Spike.res20kHz<endedge));
+        
+        if sliding ==1
+            
+            %spikesperbin(k,:) = conv(histcounts(spikes,edges),ones(windowslideratio,1).*2,'same');
+             spikesperbin(k,:) = conv(histcounts(spikes,edges),ones(windowslideratio,1).*(1/windowslideratio),'same');
+        else
+            spikesperbin(k,:) = histcounts(spikes,edges);
+        end
+        
+    end
+    
+    spikesperbinwmPFC = spikesperbin; % this is also with full - so no INT filtering yet - can use for the comparison
+    % spikesperbinFULL = spikesperbin;
+    
+   % spikesperbin(find(Clu.isIntern(1:length(Clu.shank(Clu.shank<32)))),:) = 0;
+
+    %spikesperbin(find(Clu.FirRateHz>10),:) = 0;
+    
+    spikesperbin(find(Clu.shank>32),:) = 0;
+%             spikesperbin(find(Clu.shank<8),:) = 0; %special case for artie
+%              spikesperbin(find(Clu.shank>20),:) = 0;  %special case for artie
+    spikesperbintestlook= [];
+    spikesperbintestlook = sum(spikesperbin);
+    
+    
+    
+    
+%     testholdx = Track.xPix(Laps.startLfpInd(loopnum):Laps.endLfpInd(loopnum));
+%     testholdy = Track.yPix(Laps.startLfpInd(loopnum):Laps.endLfpInd(loopnum));
+
+        testholdx = Track.xPix(Laps.WhlLfpIndEndCW{loopnum}:Laps.endLfpInd(loopnum));
+        testholdy = Track.yPix(Laps.WhlLfpIndEndCW{loopnum}:Laps.endLfpInd(loopnum));
+    
+    
+    %totalcellsactiveperbin = smooth(sum(spikesperbin));
+
+    totalcellsactiveperbin = smooth(sum(spikesperbin),muasmoothval);
+
+    % totalcellsactiveperbin = sum(spikesperbin);
+    
+    
+    fixedxcor = resample(testholdx,size(totalcellsactiveperbin,1),size(testholdx,1));
+    fixedycor = resample(testholdy,size(totalcellsactiveperbin,1),size(testholdy,1));
+
+%     mazesect = Track.mazeSect(Laps.startLfpInd(loopnum):Laps.endLfpInd(loopnum));
+    mazesect = Track.mazeSect(Laps.WhlLfpIndEndCW{loopnum}:Laps.endLfpInd(loopnum));
+
+
+    maxformazsectfix = max(mazesect);
+%     speedlook= Track.speed_MMsec(Laps.startLfpInd(loopnum):Laps.endLfpInd(loopnum));
+    speedlook= Track.speed_MMsec(Laps.WhlLfpIndEndCW{loopnum}:Laps.endLfpInd(loopnum));
+
+    mazesect = mazesect./max(mazesect)*80;
+    speedlook = smooth((speedlook./max(speedlook))*80); 
+    % SHOULD ADDRESS THIS - I DON;T THINK WE WANT TO BE USING SPEED 
+    % THRESHOLDS BASED ON NORMALIZED VALUES PER TRIAL - WE CAN STICK TO REAL NUMBERS
+    %ALSO SHOULD WE BE SMOOTHING THE SPEED? - PROBABLY OK AT THIS SAMPLING
+    %RATE. 
+    
+    mazesectfix = resample(mazesect,size(totalcellsactiveperbin,1),size(mazesect,1));
+    speedlookfix = resample(speedlook,size(totalcellsactiveperbin,1),size(speedlook,1));
+    
+% %     wheelspeedlook= Laps.WhlSpeedCW(Laps.startLfpInd(loopnum):Laps.endLfpInd(loopnum));
+%     wheelspeedlook= Laps.WhlSpeedCW(Laps.WhlLfpIndEndCW((loopnum):Laps.endLfpInd(loopnum));
+% 
+%     wheelspeedlook = smooth((wheelspeedlook./max(wheelspeedlook))*80);
+%     wheelspeedlookfix = resample(wheelspeedlook,size(totalcellsactiveperbin,1),size(wheelspeedlook,1));
+    
+    mazesectfixfix = round(mazesectfix*maxformazsectfix/80);
+    
+     %LIAperiodactivity = totalcellsactiveperbin(find(speedlookfix<50 & (mazesectfixfix ==7 | mazesectfixfix ==8 |mazesectfixfix ==9)));
+      LIAperiodactivity = totalcellsactiveperbin(find(speedlookfix<3 & (mazesectfixfix ==7 | mazesectfixfix ==8 |mazesectfixfix ==9)));
+    
+    meanLIA = mean(LIAperiodactivity);
+    stdLIA = std(LIAperiodactivity);
+    
+    % change to 30 for with int 10 w/o
+    %[frpks frpksloc pkwidth] = findpeaks(smooth(totalcellsactiveperbin),'MinPeakProminence',meanLIA+(stdLIA*2),'Annotate','extents','WidthReference','halfheight');
+     % [frpks frpksloc pkwidth] = findpeaks(totalcellsactiveperbin,'MinPeakProminence',meanLIA+(stdLIA*1.5),'Annotate','extents','WidthReference','halfheight');
+     % 
+      [frpks frpksloc pkwidth] = findpeaks(totalcellsactiveperbin,'MinPeakProminence',meanLIA+(stdLIA*2),'Annotate','extents','WidthReference','halfheight');
+ 
+
+    % inrewardsareapeaks = ismember(frpksloc,find(speedlookfix<3 & (mazesectfixfix ==7 | mazesectfixfix ==8 |mazesectfixfix ==9)));
+
+     inrewardsareapeaks = ismember(frpksloc,find(speedlookfix<25 & (mazesectfixfix ==7 | mazesectfixfix ==8 |mazesectfixfix ==9)));
+
+
+    %inrewardsareapeaks = ismember(frpksloc,find((mazesectfixfix ==7 | mazesectfixfix ==8 |mazesectfixfix ==9)));
+    
+    spwrpeakscoord = frpksloc(inrewardsareapeaks);
+
+
+
+    if (RAT ==9 & loopnum ==25)% annoying edge case where trial 28 in NED (rat session #9) causes an error because it
+        spwrpeakscoord = spwrpeakscoord(1:end-1);
+    end
+
+    if ~isempty(spwrpeakscoord)
+%         signaltotcell = smooth(totalcellsactiveperbin);
+        signaltotcell = totalcellsactiveperbin; 
+        tinycounter = 1;
+        for f = 1:2:length(spwrpeakscoord)*2;
+            % change to 10 for with int 2 w/o
+
+            if isempty(max(find(signaltotcell(1:spwrpeakscoord(tinycounter)) <meanLIA))) % this added for edge case where peak is in part that doesnt go below mean
+
+                dSignal = diff(signaltotcell(1:spwrpeakscoord(tinycounter)));  % Approximate derivative
+                signChange = diff(sign(dSignal));  % Look for sign changes
+
+                % A change from -1 to 1 means it went from negative to positive
+                firstSwitchIndex = find(signChange > 1, 1, 'last') + 1;
+
+                chunkmarker(f) =  firstSwitchIndex;
+            else
+
+                chunkmarker(f) = max(find(signaltotcell(1:spwrpeakscoord(tinycounter)) <meanLIA));
+            end
+
+            if isempty(min(find(signaltotcell(spwrpeakscoord(tinycounter):end)<meanLIA)) + spwrpeakscoord(tinycounter)) % this added for edge case where peak is in part that doesnt go below mean
+
+                dSignal = diff(signaltotcell(spwrpeakscoord(tinycounter):end));  % Approximate derivative
+                signChange = diff(sign(dSignal));  % Look for sign changes
+
+                % A change from -1 to 1 means it went from negative to positive
+                firstSwitchIndex = find(signChange > 1, 1, 'first') + 1;
+
+             chunkmarker(f+1) =  firstSwitchIndex + spwrpeakscoord(tinycounter);
+            else
+            chunkmarker(f+1) = min(find(signaltotcell(spwrpeakscoord(tinycounter):end)<meanLIA)) + spwrpeakscoord(tinycounter);
+            tinycounter = tinycounter+1;
+            end
+        end
+        
+        %trying to remove extra large spws at the end.. but messed up/was too
+        %stringent.
+        %now is removing chunks with movement in them.
+        % for t = 1:2:length(chunkmarker)
+        %     if length(find(speedlookfix(chunkmarker(t):chunkmarker(t+1)-10)>10)) > 1
+        %         mark4remove(t) = 0;
+        %         mark4remove(t+1) = 0;
+        %     else
+        %         mark4remove(t) = 1;
+        %         mark4remove(t+1) = 1;
+        %     end
+        % end
+        % 
+        % chunkmarker = chunkmarker(find(mark4remove));
+        
+        if ~isempty(find(diff(chunkmarker) <= 0))
+            repeatindex = find(diff(chunkmarker) <= 0);
+            chunkmarker(repeatindex) = 0;
+            chunkmarker(repeatindex+1) = 0;
+        end
+        
+        chunkmarker= chunkmarker(chunkmarker ~= 0);
+        
+
+
+%         %    to see the selections trialbytrial
+%         figure;
+% 
+%         set(gcf,'position', [100,700,1200,700])
+%         plot(smooth(totalcellsactiveperbin),'k')
+%          hold on;
+%          plot(mazesectfix,'g');
+%          hold on;
+%          plot(speedlookfix,'m');
+%          hold on;
+% %          plot(wheelspeedlookfix,'r')
+% %          hold on
+% 
+% 
+%          for f = 1:2:length(chunkmarker);
+% 
+%             line([chunkmarker(f) chunkmarker(f)], [0 90 ] ,'color','b')
+% 
+%             line([chunkmarker(f+1) chunkmarker(f+1)], [0 90 ] ,'color','b')
+%         end
+%          xlim([0 length(smooth(totalcellsactiveperbin))])
+%          title(num2str(loopnum))
+%          pause
+%          close
+        %
+        
+        
+        % clearvars -except masterSPWdetectedmarker
+        % save('detectedSPWMarkers.mat');
+        
+        
+        listofchunks = unique(chunkmarker);
+
+        listofchunks = min(listofchunks(:),size(spikesperbin,2))'; % added to work with no speed thresh and interneurons really just if the end of a chunk is the last bin then it could be one more than the spikesperbin hist so cutting that down.
+        
+        ripplecounter = 1;
+        for chunkhold =1:2:length(listofchunks)
+
+            spwSpikes{loopnum,ripplecounter} =spikesperbin(:,listofchunks(chunkhold):listofchunks(chunkhold+1));
+            spwSpikes2{loopnum,ripplecounter} =spikesperbinwmPFC(:,listofchunks(chunkhold):listofchunks(chunkhold+1));
+            rippletimemarkers{loopnum,ripplecounter} = listofchunks(chunkhold):listofchunks(chunkhold+1);
+            ripplecounter = ripplecounter +1;
+        end
+    else
+
+    end
+    % disp(RAT)
+    % disp(loopnum)
+    fprintf('rat %d /15 loop %d / %d \n', RAT, loopnum, length(trialMaster))
+    % toc
+end
+
+spwSpikesflp = spwSpikes';
+biglist = spwSpikesflp(find(~cellfun('isempty',spwSpikesflp)));
+
+
+spwSpikesflp2 = spwSpikes2';
+biglistfull = spwSpikesflp2(find(~cellfun('isempty',spwSpikesflp2)));
+
+rippletimemarkersflp = rippletimemarkers';
+
+idx = ~cellfun('isempty',rippletimemarkersflp);
+rippletimemarkers2(:,1) = cellfun(@(v)v(1)-2,rippletimemarkersflp(idx));
+rippletimemarkers2(:,2) = cellfun(@(v)v(end)+2,rippletimemarkersflp(idx));
+
+trialID4rip = [];
+for j = 1:size(spwSpikes,1);
+    test = [];
+    test = spwSpikes(j,:);
+    num2make = length(find(~cellfun('isempty',test)));
+    trialID4rip = cat(1,trialID4rip,ones(num2make,1).*j);
+    
+end
+
+%
+curtrial = trialID4rip(1,1);
+counter = 1;
+for j = 1:size(trialID4rip,1)
+    if curtrial == trialID4rip(j);
+  
+    trialID4rip(j,2) = counter;
+    counter = counter+1;
+    else
+        curtrial = trialID4rip(j);
+        counter = 1;
+        trialID4rip(j,2) = counter;
+        counter = counter+1;
+    end
+end
+    
+
+
+
+
+
+
+% clearvars -except spwSpikes spwSpikes2 rippletimemarkers
+
+% vairables / knobs in ripple detection and saving
+% spikes - binsize1 - binsize2 - convolved or not - smoothed MUA - value for smooth -
+% MUA threshold
+% sprintf('spwSpikes_SM_%02d_bin_%02d_spd_%02d.mat',smoothVAL,divXY,minSpeed)
+
+
+if sliding == 1;
+
+    slidechar = 's';
+    spikesName = sprintf('spwSpikes_tbin_%.3f_%c_%g_muaSM_%gntest1.mat',tbin2,slidechar,windowslideratio,muasmoothval);
+else
+    spikesName = sprintf('spwSpikes_tbin_%.3f_muaSM_%g.mat',tbin,muasmoothval);
+
+end
+
+%spikesName = sprintf('spwSpikesSPDFIX_slide_%c_tbin_%.2f_wr_%.2f.mat',slidechar,tbin2,windowslideratio);
+
+% spikesName = sprintf('spwSpikes_tbin_%.2f_%c_%.2f.mat',tbin2,slidechar,windowslideratio);
+
+save(spikesName,'biglist', 'biglistfull', 'spwSpikes2', 'spwSpikes','rippletimemarkers2','rippletimemarkers', 'trialID4rip', 'trialMaster');
+
+%save('spwSpikes.mat','biglist', 'spwSpikes2', 'spwSpikes','rippletimemarkers2','rippletimemarkers', 'trialID4rip', 'trialMaster');
+
+ %pfmapflname = sprintf('placefieldmaps_sm%02d_bin%02d_spd%02dcleaned.mat',smoothVAL,divXY,minSpeed);
+
+
+
+    end
+
+
