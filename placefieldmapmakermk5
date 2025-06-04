@@ -1,0 +1,98 @@
+
+
+clear all
+
+%load('rec01_BehavElectrDataLFPCuratedIOLinearSnap3.mat')
+ load('rec01_BehavElectrDataLFP.mat')
+
+
+tic
+
+for IDclu = 1:max(Spike.totclu);
+    
+    normSmoothedFR = [];
+    smFR = [];
+    disp([num2str(IDclu) ' out of ' num2str(length(Clu.totClu))])
+    
+    
+    smoothVAL = 50 ;%270;%220; %50; %30
+    divXY = 06;%;20;%5;
+    
+    minSpeed = 50;   % mm/sec
+    
+    xTr = Track.xPix(Track.xPix > 1 & Track.yPix > 1 & Track.speed_MMsec > minSpeed & (Track.inbound ==1 | Track.outbound ==1) );
+    yTr = Track.yPix(Track.xPix > 1 & Track.yPix > 1 & Track.speed_MMsec > minSpeed & (Track.inbound ==1 | Track.outbound ==1) );
+    
+    %  xTr = Track.xPix(Track.xPix > 1 & Track.yPix > 1 & Track.speed_MMsec > minSpeed );
+    % yTr = Track.yPix(Track.xPix > 1 & Track.yPix > 1 & Track.speed_MMsec > minSpeed );
+
+    locClu = unique(Spike.clu(Spike.totclu == IDclu));
+    shankN = unique(Spike.shank(Spike.totclu == IDclu));
+    
+    sp = find(Spike.totclu == IDclu & Spike.xMM>0 & Spike.yMM>0 & Spike.speed_MMsec > minSpeed & (Spike.inbound ==1 | Spike.outbound ==1) );
+
+     % sp = find(Spike.totclu == IDclu & Spike.xMM>0 & Spike.yMM>0 & Spike.speed_MMsec > minSpeed);
+     % 
+    
+    
+    xSpAll = Spike.xPix(sp);
+    ySpAll = Spike.yPix(sp);
+    xSp = xSpAll(xSpAll > 1);
+    ySp = ySpAll(xSpAll > 1);
+    
+    meanFR = round((length(xSp) / (length(xTr)/1250)) * 10) / 10;             % n spikes/sec
+    
+    % bin coordinates
+    binnedSpikes = full(sparse(round(xSp/divXY)+1,round(ySp/divXY)+1,1,round(max(xTr)/divXY+2),round(max(yTr)/divXY+2)));
+    binnedTime = full(sparse(round(xTr/divXY)+1,round(yTr/divXY)+1,1/xml.lfpSampleRate,round(max(xTr)/divXY+2),round(max(yTr)/divXY+2)));
+    binnedFR = binnedSpikes ./ binnedTime;
+    binnedFR(1:floor(min(xTr)/divXY)-1,:) = [];
+    binnedFR(:,1:floor(min(yTr)/divXY)-1) = [];
+    binP = binnedTime ./ (sum(sum(binnedTime)));
+    
+
+    if IDclu == 1
+        binnedTime2 = binnedTime;
+
+        binnedTime2(1:floor(min(xTr)/divXY)-1,:) = [];
+        binnedTime2(:,1:floor(min(yTr)/divXY)-1) = [];
+    end
+
+
+    binnedFR(isnan(binnedFR))=0; 
+    binnedFR(isinf(binnedFR))=0;
+    M = max([round(max(xSp)/divXY+1) round(max(ySp)/divXY+1)])
+    
+    
+    
+    
+    if smoothVAL == 0;
+        smFR = smooth2a(binnedFR,1,1);
+        
+    else
+        
+         %smFR = SmoothPix(binnedFR,[smoothVAL smoothVAL]);
+         smFR = SmoothPix(binnedFR,[smoothVAL./M smoothVAL./M]);
+    end
+    
+    normSmoothedFR = smFR ./ sum(smFR(:));
+    
+    
+    placefieldmaps(IDclu,:) = smFR(:);
+    
+    
+end
+
+BW = imbinarize(binnedTime2,0.001);
+ map = double(BW);
+ % save('binnedmapclean2.mat','map');
+
+
+
+pfmapflname = sprintf('placefieldmaps_sm%02d_bin%02d_spd%02dCURcleaned.mat',smoothVAL,divXY,minSpeed);
+% pfmapflname = sprintf('placefieldmapsCUR_sm%02d_bin%02d_spd%02d.mat',smoothVAL,divXY,minSpeed);
+
+clearvars -except placefieldmaps binnedFR pfmapflname map
+save(pfmapflname);
+
+toc
