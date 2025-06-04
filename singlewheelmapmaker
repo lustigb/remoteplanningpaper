@@ -1,0 +1,124 @@
+% new big wheel map maker
+clear all 
+
+load rec01_BehavElectrDataLFP % load the matlab data structure
+
+%%
+leaveouttrials = [0]';
+
+    for k = 1:length(Laps.lapID); % loop through all the laps in the session 
+
+
+        UpCrossings(k) =  Laps.WhlLfpIndStartCW{k}(end).*(20000/1250); 
+        % store the time of the start of the last wheel run for each trial 
+        %this is a LFP variable so it is in 1250Hz samples - convert to
+        %20k because I will use the Spike.res20K times
+                                                                
+
+    end
+
+    UpCrossingsSelect = UpCrossings';
+    binsize = 125;% binsize in milliseconds
+    smoothVAL = 1;
+    samplingrate = 20000; %samples per second
+    prestim = 0; % time before start of wheel run to look at
+    poststim = 8; % time after start of wheel run to look at so N-stimlength = post wheel run completion time
+    totalwindowtime = prestim + poststim;
+    j = (1000/binsize); % because milliseconds
+
+    %makes the epFieldHolder
+%     for jj = 1:find(Clu.shank<33,1,'last'); %makesure only hpc - (mpfc is on shanks above #32) - loop through all clusters
+        for jj = 1:size(Clu.totClu,2); %makesure only hpc - (mpfc is on shanks above #32) - loop through all clusters
+
+     
+
+        res1 = [];
+        holder = [];
+        holder2 = [];
+
+        res1 = Spike.res20kHz(Spike.totclu == jj); % find all the spike times for a given cluster 
+
+        for k = 1:length(UpCrossings) % loop through all of the wheel runs
+
+            holder =   res1(res1> (UpCrossingsSelect(k) -(prestim*samplingrate)) & res1< (UpCrossingsSelect(k) + (poststim*samplingrate))) ; % store all of the spike times for a given cluster after the wheel run start and before the postim + wheel run start aka 8 seconds later
+            holder2(k,:) = histcounts(holder,(UpCrossingsSelect(k) -(prestim*samplingrate)):(samplingrate)/j:(UpCrossingsSelect(k) + (poststim*samplingrate))); % get the binned histcounts using the bin size specified- so this gives the binned FR for the binsize across the 8 second wheel run
+
+        end
+
+        epFieldHolder{jj} = holder2; % save each clusters binned episode firing for each wheel run
+    end
+
+% this just does minor housekeeping where the trials with multiple wheel 
+% run attempts are removed to give clean images. only removes ~6 trials
+% out of 100
+
+load('mutliwheelrunmarker.mat') % made using the multiwheelrunmarkertest.m that is in TinyTim11/28 folder (will make a copy in util)
+
+for k = 1:length(Laps.lapID);
+    
+    
+    UpCrossings(k) =  Laps.WhlLfpIndStartCW{k}(end).*(20000/1250);
+    
+end
+
+UpCrossingsAll = [1:length(UpCrossings)]';
+
+UpCrossingsAll = setdiff(UpCrossingsAll,find(multiwheelrun)');
+
+UpCrossingsAll = setdiff(UpCrossingsAll,leaveouttrials);
+
+for f = 1:length(Laps.lapID)
+    %for j = list2use'
+    for j = 1:length(epFieldHolder)
+        %fieldseq(j,:) = smooth(epFieldHolder{j}(f,:))./max(smooth(epFieldHolder{j}(f,:)));
+
+        %fieldseq(j,:) = smooth(epFieldHolder{j}(f,:));
+
+        
+
+        fieldseq(j,:) = SmoothPix(epFieldHolder{j}(f,:),[smoothVAL 0]);
+
+        %fieldseq(j,:) = epFieldHolder{j}(f,:);
+    end
+    fieldseq(isnan(fieldseq)) = 0;
+    trialpopsequencesmoothedandnorm(f,:,:) = fieldseq;
+end
+
+
+
+alltrials = [UpCrossingsAll;];
+
+
+% alltrials except multiwheel run
+
+alltrialsonly = squeeze(trialpopsequencesmoothedandnorm(alltrials,:,:));
+
+alltrialsonly2 = squeeze(mean(alltrialsonly));
+
+
+%
+% way to make only with correct trials
+% rightpast = rightpast(~ismember(rightpast,errorTrialsList));
+% centerpast = centerpast(~ismember(centerpast,errorTrialsList));
+% leftpast = leftpast(~ismember(leftpast,errorTrialsList));
+%
+
+alltrialsonly2 = alltrialsonly2.*8; % fixes the scale - right now is spikes per bin (125ms) instead of spikes per second (so mulitple by 8)
+
+allWheelMap = alltrialsonly2;
+
+
+
+
+% if smoothVAL <1
+% 
+%     whlmapflname = sprintf('wheelmaps_sm%#.2g_bin%02d_cleaned.mat',smoothVAL,binsize);
+% else
+% 
+% whlmapflname = sprintf('wheelmaps_sm%0.2f_bin%02d_cleaned.mat',smoothVAL,binsize);
+% 
+% end
+
+whlmapflname = sprintf('Singlewheelmap_sm%2g_bin%02d_cleaned.mat',smoothVAL,binsize);
+
+save(whlmapflname,'allWheelMap')
