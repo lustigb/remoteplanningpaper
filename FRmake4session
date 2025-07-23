@@ -1,0 +1,480 @@
+clear all;
+load('rec01_BehavElectrDataLFP.mat'); % Load original LFP data
+load('mutliwheelrunmarker.mat'); % Load multiwheelrunmarker.mat
+
+%% --- Define Global Parameters and Initialize FRmaps Structure ---
+% These parameters will be stored in the FRmaps structure for reproducibility.
+% They are defined here to be easily adjustable.
+
+% Wheel Map Parameters
+params.wheel.binsize = 125; % binsize in milliseconds
+params.wheel.smoothVAL = 1; % Smoothing for wheel map (sigma for 1D SmoothPix)
+params.wheel.prestim = 0; % time before start of wheel run to look at (seconds)
+params.wheel.poststim = 8; % time after start of wheel run to look at (seconds)
+
+% 2D Map Parameters
+params.twoD.smoothVAL = 50; % Default initial value for 2D map smoothing
+params.twoD.divXY = 6;     % Default initial value for 2D map bin size
+params.twoD.minSpeed = 50; % Minimum speed threshold for position data (mm/sec)
+
+% Linearized Map Parameters
+params.linarm.smoothVAL = 1; % Smoothing for linearized map (sigma in bins)
+params.linarm.divLinear = 10; % Bin size for linearized map (in original units of snapIndex/adjustedLineSnap)
+params.linarm.minSpeed = 50; % Minimum speed threshold for position data (mm/sec)
+
+% General Data Parameters
+samplingrate = 20000; % samples per second (Spike.res20kHz is at 20kHz)
+% Assuming xml.lfpSampleRate is loaded or defined elsewhere. For now, using samplingrate.
+if ~exist('xml', 'var') || ~isfield(xml, 'lfpSampleRate')
+    xml.lfpSampleRate = samplingrate; % Fallback if xml is not loaded or missing field
+    warning('xml.lfpSampleRate not found, using default samplingrate for calculations.');
+end
+
+% Initialize FRmaps structure to store results and parameters
+maxClu = max(Spike.totclu); % Get the total number of clusters
+
+% --- Determine max possible length for linearized maps for pre-allocation ---
+% This needs to be done once globally based on the maximum possible extent of xPixProj
+% considering only valid tracking data and inbound/outbound arms.
+filtered_xPixProj_for_max_len = Track.xPixProj(...
+    Track.xPix > 0 & Track.yPix > 0 & Track.speed_MMsec > params.linarm.minSpeed & ...
+    (Track.inbound == 1 | Track.outbound == 1));
+
+if ~isempty(filtered_xPixProj_for_max_len)
+    max_linear_map_storage_len = round(max(filtered_xPixProj_for_max_len) / params.linarm.divLinear) + 2;
+else
+    max_linear_map_storage_len = 2; % Minimum sensible length if no valid data
+    warning('No valid tracking data for determining max_linear_map_storage_len. Using default length of %d.', max_linear_map_storage_len);
+end
+
+% Determine max possible length for wheel maps for pre-allocation
+totalwindowtime_wheel = params.wheel.prestim + params.wheel.poststim;
+j_wheel = (1000 / params.wheel.binsize); % conversion factor for milliseconds to bins per second
+num_wheel_time_bins = round(totalwindowtime_wheel * j_wheel);
+
+FRmaps.linarm.param = params.linarm;
+% Initialize linearized map fields as matrices, pre-filled with NaNs
+FRmaps.linarm.leftout = NaN(maxClu, max_linear_map_storage_len);
+FRmaps.linarm.leftin = NaN(maxClu, max_linear_map_storage_len);
+FRmaps.linarm.leftcombined = NaN(maxClu, max_linear_map_storage_len);
+FRmaps.linarm.centerout = NaN(maxClu, max_linear_map_storage_len);
+FRmaps.linarm.centerin = NaN(maxClu, max_linear_map_storage_len);
+FRmaps.linarm.centercombined = NaN(maxClu, max_linear_map_storage_len);
+FRmaps.linarm.rightout = NaN(maxClu, max_linear_map_storage_len);
+FRmaps.linarm.rightin = NaN(maxClu, max_linear_map_storage_len);
+FRmaps.linarm.rightcombined = NaN(maxClu, max_linear_map_storage_len);
+
+FRmaps.wheel.param = params.wheel;
+% Initialize wheel map fields as matrices, pre-filled with NaNs
+FRmaps.wheel.all = NaN(maxClu, num_wheel_time_bins);
+FRmaps.wheel.left = NaN(maxClu, num_wheel_time_bins);
+FRmaps.wheel.centerL = NaN(maxClu, num_wheel_time_bins);
+FRmaps.wheel.centerR = NaN(maxClu, num_wheel_time_bins);
+FRmaps.wheel.right = NaN(maxClu, num_wheel_time_bins);
+
+FRmaps.twoD.param = params.twoD;
+FRmaps.twoD.maps = cell(maxClu, 1); % Cluster, 2D Map (linearized vector)
+FRmaps.twoD.dims = cell(maxClu, 1); % Cluster, Dimensions of 2D Map
+
+%% --- Pre-calculate Wheel Run Data (once) ---
+% This section processes all wheel runs and all clusters to create epFieldHolder
+% for efficiency, as it's independent of the interactive loop's currentCluIdx.
+
+% Calculate UpCrossings
+UpCrossings = zeros(1, length(Laps.lapID));
+for k = 1:length(Laps.lapID)
+    % Ensure Laps.WhlLfpIndStartCW{k} is not empty before accessing end
+    if ~isempty(Laps.WhlLfpIndStartCW{k})
+        UpCrossings(k) = Laps.WhlLfpIndStartCW{k}(end) .* (samplingrate / 1250); % Using samplingrate from params
+    else
+        UpCrossings(k) = NaN; % Mark as NaN if no wheel run start
+    end
+end
+UpCrossingsSelect = UpCrossings(~isnan(UpCrossings))'; % Remove NaNs and transpose
+
+% Calculate epFieldHolder
+% Use the globally defined num_wheel_time_bins for holder2 pre-allocation
+epFieldHolder = cell(1, maxClu); % Pre-allocate cell array
+for jj = 1:maxClu % Loop through all clusters to fill epFieldHolder
+    res1 = Spike.res20kHz(Spike.totclu == jj); % Find all spike times for a given cluster
+    holder2 = zeros(length(UpCrossingsSelect), num_wheel_time_bins); % Pre-allocate for efficiency
+    
+    for k = 1:length(UpCrossingsSelect) % Loop through all of the selected wheel runs
+        % Define bin edges for histcounts
+        bin_edges = (UpCrossingsSelect(k) - (params.wheel.prestim * samplingrate)) : (samplingrate / j_wheel) : (UpCrossingsSelect(k) + (params.wheel.poststim * samplingrate));
+        
+        % Ensure bin_edges has at least two elements for histcounts
+        if length(bin_edges) < 2
+            continue; % Skip if bin edges are not valid
+        end
+
+        holder = res1(res1 > bin_edges(1) & res1 < bin_edges(end)); % Spikes within the window
+        
+        % Use histcounts to bin spikes, ensuring output size matches pre-allocation
+        counts = histcounts(holder, bin_edges);
+        if length(counts) > size(holder2, 2)
+            counts = counts(1:size(holder2, 2)); % Trim if too long
+        elseif length(counts) < size(holder2, 2)
+            counts(end+1 : size(holder2, 2)) = 0; % Pad with zeros if too short
+        end
+        holder2(k,:) = counts; % Store binned spike counts for this run
+    end
+    epFieldHolder{jj} = holder2; % Save each cluster's binned episode firing for each wheel run
+end
+
+% Housekeeping for wheel runs - remove trials with multiple wheel runs
+leaveouttrials = [0]'; % Assuming this is intended to be a column vector
+UpCrossingsAll = (1:length(UpCrossings))'; % All trial indices
+UpCrossingsAll = setdiff(UpCrossingsAll, find(multiwheelrun)); % Remove multi-wheel run trials
+UpCrossingsAll = setdiff(UpCrossingsAll, leaveouttrials); % Remove specified leave-out trials
+
+% Filter new UpCrossings lists to remove multiwheelrun attempts
+% These variables (UpCrossingsLC, CL, CR, RC) are assumed to be loaded or defined elsewhere.
+% For robustness, we check their existence and filter them.
+if exist('UpCrossingsLC', 'var')
+    UpCrossingsLC_filtered = setdiff(UpCrossingsLC, find(multiwheelrun));
+else
+    UpCrossingsLC_filtered = []; % Handle case where variable might not exist
+    warning('UpCrossingsLC not found. Left wheel map will be empty.');
+end
+if exist('UpCrossingsCL', 'var')
+    UpCrossingsCL_filtered = setdiff(UpCrossingsCL, find(multiwheelrun));
+else
+    UpCrossingsCL_filtered = [];
+    warning('UpCrossingsCL not found. Center-Left wheel map will be empty.');
+end
+if exist('UpCrossingsCR', 'var')
+    UpCrossingsCR_filtered = setdiff(UpCrossingsCR, find(multiwheelrun));
+else
+    UpCrossingsCR_filtered = [];
+    warning('UpCrossingsCR not found. Center-Right wheel map will be empty.');
+end
+if exist('UpCrossingsRC', 'var')
+    UpCrossingsRC_filtered = setdiff(UpCrossingsRC, find(multiwheelrun));
+else
+    UpCrossingsRC_filtered = [];
+    warning('UpCrossingsRC not found. Right wheel map will be empty.');
+end
+
+%% --- Identify Global Linearized Arm Y-Coordinates ---
+% This section determines the expected binned Y-coordinates for the Left, Center, and Right arms.
+% It assumes that Track.yPixProj contains discrete values corresponding to these arms.
+% We filter for valid tracking data, speed, AND inbound/outbound trajectories to get a representative set of yPixProj values.
+valid_yPixProj_filter = (Track.xPix > 0 & Track.yPix > 0 & Track.speed_MMsec > params.linarm.minSpeed & ...
+                         (Track.inbound == 1 | Track.outbound == 1));
+valid_yPixProj = Track.yPixProj(valid_yPixProj_filter);
+
+binned_yPixProj = round(valid_yPixProj / params.linarm.divLinear) + 1;
+unique_binned_y_coords = sort(unique(binned_yPixProj));
+
+% Ensure we found exactly 3 unique binned y-coordinates for the arms
+if length(unique_binned_y_coords) ~= 3
+    warning('Expected 3 unique binned Y-coordinates for linearized arms, but found %d. Linearized maps might be incorrect.', length(unique_binned_y_coords));
+    % Assign placeholders or handle error more robustly if needed
+    expected_arm_binned_y_coords = [NaN, NaN, NaN];
+else
+    expected_arm_binned_y_coords = unique_binned_y_coords; % These are now [Left_Y_bin, Center_Y_bin, Right_Y_bin]
+end
+
+%% --- Main Processing Loop (Iterate through all clusters) ---
+% This loop replaces the interactive loop and processes all clusters
+% to populate the FRmaps structure.
+
+for IDclu = 1:maxClu % Loop through all clusters
+    
+    % --- Data Filtering for Tracking (2D) ---
+    % Use parameters from the params struct
+    xTr = Track.xPix(Track.xPix > 1 & Track.yPix > 1 & Track.speed_MMsec > params.twoD.minSpeed);
+    yTr = Track.yPix(Track.xPix > 1 & Track.yPix > 1 & Track.speed_MMsec > params.twoD.minSpeed);
+    
+    % --- Data Filtering for Spikes (2D) ---
+    sp = find(Spike.totclu == IDclu & Spike.xPix > 1 & Spike.yPix > 1 & Spike.speed_MMsec > params.twoD.minSpeed);
+    xSp = Spike.xPix(sp);
+    ySp = Spike.yPix(sp);
+    
+    % --- Mean Firing Rate Calculation (Optional) ---
+    meanFR = NaN; % Default to NaN
+    if exist('xml', 'var') && isfield(xml, 'lfpSampleRate') && xml.lfpSampleRate > 0
+        if ~isempty(xTr)
+            meanFR = (length(xSp) / (length(xTr)/xml.lfpSampleRate)); % Removed rounding for precision
+        else
+            warning('No valid tracking data for meanFR calculation for Cluster %d.', IDclu);
+        end
+    else
+        warning('xml.lfpSampleRate not found or invalid, meanFR calculation skipped for Cluster %d.', IDclu);
+    end
+    
+    % --- Spatial Binning (2D Map) ---
+    maxX_Tr = max(xTr);
+    maxY_Tr = max(yTr);
+    
+    mapSizeX = max(1, round(maxX_Tr / params.twoD.divXY) + 2);
+    mapSizeY = max(1, round(maxY_Tr / params.twoD.divXY) + 2);
+    
+    binnedSpikes = full(sparse(max(1, round(xSp/params.twoD.divXY)+1), max(1, round(ySp/params.twoD.divXY)+1), 1, mapSizeX, mapSizeY));
+    binnedTime = full(sparse(max(1, round(xTr/params.twoD.divXY)+1), max(1, round(yTr/params.twoD.divXY)+1), 1/xml.lfpSampleRate, mapSizeX, mapSizeY));
+    
+    binnedFR = binnedSpikes ./ binnedTime;
+    
+    minBinX = floor(min(xTr)/params.twoD.divXY);
+    minBinY = floor(min(yTr)/params.twoD.divXY);
+    
+    if minBinX > 0 && minBinX < size(binnedFR,1)
+        binnedFR(1:minBinX,:) = [];
+    end
+    if minBinY > 0 && minBinY < size(binnedFR,2)
+        binnedFR(:,1:minBinY) = [];
+    end
+    
+    binnedFR(isnan(binnedFR))=0;
+    binnedFR(isinf(binnedFR))=0;
+    
+    % --- Determine Map Dimensions for Smoothing (`M`) ---
+    [rowsFR, colsFR] = size(binnedFR);
+    M = max(rowsFR, colsFR); 
+    
+    % --- Smoothing (2D Map) ---
+    if params.twoD.smoothVAL == 0
+        smFR = smooth2a(binnedFR,1,1);
+    else
+        smFR = SmoothPix(binnedFR,[params.twoD.smoothVAL./M params.twoD.smoothVAL./M]);
+    end
+    % normSmoothedFR = smFR ./ sum(smFR(:)); % Original code had this, but not used later. Keeping for reference.
+    
+    % Store 2D map and its dimensions
+    FRmaps.twoD.maps{IDclu} = smFR(:); % Store as linear vector
+    FRmaps.twoD.dims{IDclu} = [rowsFR, colsFR]; % Store dimensions
+
+    % --- Calculate Wheel Maps for current IDclu ---
+    current_epFieldHolder = epFieldHolder{IDclu};
+    fieldseq = zeros(length(Laps.lapID), num_wheel_time_bins); % Use global num_wheel_time_bins
+
+    for f = 1:length(Laps.lapID)
+        if f <= size(current_epFieldHolder, 1)
+            % Ensure fieldseq gets the correct length data
+            temp_field = SmoothPix(current_epFieldHolder(f,:), [params.wheel.smoothVAL 0]);
+            if length(temp_field) > num_wheel_time_bins
+                fieldseq(f,:) = temp_field(1:num_wheel_time_bins);
+            elseif length(temp_field) < num_wheel_time_bins
+                padded_temp_field = [temp_field, zeros(1, num_wheel_time_bins - length(temp_field))];
+                fieldseq(f,:) = padded_temp_field;
+            else
+                fieldseq(f,:) = temp_field;
+            end
+        else
+            fieldseq(f,:) = NaN; 
+        end
+    end
+    fieldseq(isnan(fieldseq)) = 0; 
+    
+    % Original single wheel map
+    allWheelMap = squeeze(mean(fieldseq(UpCrossingsAll, :), 1)); 
+    allWheelMap = allWheelMap .* (1000 / params.wheel.binsize); 
+    
+    % New wheel maps based on specific trial selections
+    leftwheel = [];
+    if ~isempty(UpCrossingsLC_filtered)
+        leftwheel = squeeze(mean(fieldseq(UpCrossingsLC_filtered, :), 1));
+        leftwheel = leftwheel .* (1000 / params.wheel.binsize);
+    else
+        leftwheel = NaN(1, num_wheel_time_bins); % Ensure consistent size even if empty
+    end
+
+    centerLwheel = [];
+    if ~isempty(UpCrossingsCL_filtered)
+        centerLwheel = squeeze(mean(fieldseq(UpCrossingsCL_filtered, :), 1));
+        centerLwheel = centerLwheel .* (1000 / params.wheel.binsize);
+    else
+        centerLwheel = NaN(1, num_wheel_time_bins);
+    end
+
+    centerRwheel = [];
+    if ~isempty(UpCrossingsCR_filtered)
+        centerRwheel = squeeze(mean(fieldseq(UpCrossingsCR_filtered, :), 1));
+        centerRwheel = centerRwheel .* (1000 / params.wheel.binsize);
+    else
+        centerRwheel = NaN(1, num_wheel_time_bins);
+    end
+
+    rightwheel = [];
+    if ~isempty(UpCrossingsRC_filtered)
+        rightwheel = squeeze(mean(fieldseq(UpCrossingsRC_filtered, :), 1));
+        rightwheel = rightwheel .* (1000 / params.wheel.binsize);
+    else
+        rightwheel = NaN(1, num_wheel_time_bins);
+    end
+
+    % Store wheel maps into new named fields (ensure they are row vectors for assignment)
+    FRmaps.wheel.all(IDclu, :) = allWheelMap(:)'; 
+    FRmaps.wheel.left(IDclu, :) = leftwheel(:)';
+    FRmaps.wheel.centerL(IDclu, :) = centerLwheel(:)';
+    FRmaps.wheel.centerR(IDclu, :) = centerRwheel(:)';
+    FRmaps.wheel.right(IDclu, :) = rightwheel(:)';
+
+    % --- Calculate Linearized Maps for current IDclu (Original logic with parameter updates) ---
+    % Loop through arm types (outbound, inbound, combined)
+    for armtype = [1 2 3] % 1: Outbound, 2: Inbound, 3: Combined
+        % Reset variables for each armtype
+        xTr_linear_temp = [];
+        yTr_linear_temp = [];
+        sp_linear_temp = []; % This will contain indices into the Spike structure (spike numbers)
+        
+        % Filter data based on armtype and speed
+        track_filter_base = (Track.xPix > 0 & Track.yPix > 0 & Track.speed_MMsec > params.linarm.minSpeed);
+        spike_filter_base = (Spike.totclu == IDclu & Spike.xPix>0 & Spike.yPix>0 & Spike.speed_MMsec > params.linarm.minSpeed);
+
+        switch armtype
+            case 1 % Outbound
+                filter_tr_arm = (Track.outbound == 1);
+                filter_sp_arm = ismember(Spike.res, find(Track.outbound));
+            case 2 % Inbound
+                filter_tr_arm = (Track.inbound == 1);
+                filter_sp_arm = ismember(Spike.res, find(Track.inbound));
+            case 3 % Combined
+                filter_tr_arm = (Track.inbound == 1 | Track.outbound == 1);
+                filter_sp_arm = ismember(Spike.res, find(Track.inbound | Track.outbound));
+        end
+        
+        xTr_linear_temp = Track.xPixProj(track_filter_base & filter_tr_arm);
+        yTr_linear_temp = Track.yPixProj(track_filter_base & filter_tr_arm);
+        sp_linear_temp = find(spike_filter_base & filter_sp_arm);
+        
+        % Ensure filtered data is not empty
+        if isempty(xTr_linear_temp) || isempty(yTr_linear_temp) || isempty(sp_linear_temp)
+            % If no data, fill corresponding FRmaps fields with NaNs
+            if armtype == 1 % Outbound
+                FRmaps.linarm.leftout(IDclu, :) = NaN;
+                FRmaps.linarm.centerout(IDclu, :) = NaN;
+                FRmaps.linarm.rightout(IDclu, :) = NaN;
+            elseif armtype == 2 % Inbound
+                FRmaps.linarm.leftin(IDclu, :) = NaN;
+                FRmaps.linarm.centerin(IDclu, :) = NaN;
+                FRmaps.linarm.rightin(IDclu, :) = NaN;
+            elseif armtype == 3 % Combined
+                FRmaps.linarm.leftcombined(IDclu, :) = NaN;
+                FRmaps.linarm.centercombined(IDclu, :) = NaN;
+                FRmaps.linarm.rightcombined(IDclu, :) = NaN;
+            end
+            continue; % Skip to next armtype
+        end
+
+        xSpAll_linear = Spike.xPixProj(sp_linear_temp);
+        ySpAll_linear = Spike.yPixProj(sp_linear_temp);
+
+        xSp_linear = xSpAll_linear(xSpAll_linear > 1);
+        ySp_linear = ySpAll_linear(xSpAll_linear > 1);
+
+        % Bin coordinates for linearized map
+        max_xTr_linear = max(xTr_linear_temp);
+        max_yTr_linear = max(yTr_linear_temp);
+        
+        if isempty(max_xTr_linear) || max_xTr_linear < params.linarm.divLinear
+            map_size_x_linear = 2; % Minimum size
+        else
+            map_size_x_linear = round(max_xTr_linear / params.linarm.divLinear) + 2;
+        end
+        if isempty(max_yTr_linear) || max_yTr_linear < params.linarm.divLinear
+            map_size_y_linear = 2; % Minimum size
+        else
+            map_size_y_linear = round(max_yTr_linear / params.linarm.divLinear) + 2;
+        end
+
+        binnedSpikes_linear = full(sparse(round(xSp_linear/params.linarm.divLinear)+1, round(ySp_linear/params.linarm.divLinear)+1, 1, ...
+                                          map_size_x_linear, map_size_y_linear));
+        binnedTime_linear = full(sparse(round(xTr_linear_temp/params.linarm.divLinear)+1, round(yTr_linear_temp/params.linarm.divLinear)+1, 1/xml.lfpSampleRate, ...
+                                        map_size_x_linear, map_size_y_linear));
+        binnedFR_linear = binnedSpikes_linear ./ binnedTime_linear;
+        
+        % Trim leading empty rows/columns
+        if ~isempty(min(xTr_linear_temp))
+            minBinX_linear = floor(min(xTr_linear_temp)/params.linarm.divLinear);
+        else
+            minBinX_linear = 0;
+        end
+        if ~isempty(min(yTr_linear_temp))
+            minBinY_linear = floor(min(yTr_linear_temp)/params.linarm.divLinear);
+        else
+            minBinY_linear = 0;
+        end
+
+        if minBinX_linear > 0 && minBinX_linear < size(binnedFR_linear,1)
+            binnedFR_linear(1:minBinX_linear,:) = [];
+        end
+        if minBinY_linear > 0 && minBinY_linear < size(binnedFR_linear,2)
+            binnedFR_linear(:,1:minBinY_linear) = [];
+        end
+
+        binnedFR_linear(isnan(binnedFR_linear))=0;
+        binnedFR_linear(isinf(binnedFR_linear))=0;
+
+        % M for linearized map (based on spike projection extent)
+        M_linear_calc = max([round(max(xSp_linear)/params.linarm.divLinear+1) round(max(ySp_linear)/params.linarm.divLinear+1)]);
+        if isempty(M_linear_calc) || M_linear_calc == 0
+            M_linear_calc = 1; % Prevent division by zero if no spikes
+        end
+
+        % Smoothing for linearized map (horizontal smoothing only)
+        smFR_linear_2D = SmoothPix(binnedFR_linear, [0 params.linarm.smoothVAL]); 
+        
+        % Extract arm profiles from the smoothed linearized map
+        [~, arms_cols_linear,~] = find(mean(binnedTime_linear)); 
+        
+        trimfactor_y_proj = floor(min(yTr_linear_temp)/params.linarm.divLinear); 
+        arms_cols_linear = arms_cols_linear - trimfactor_y_proj; 
+        
+        arms_cols_linear = arms_cols_linear(arms_cols_linear > 0 & arms_cols_linear <= size(smFR_linear_2D,2));
+        
+        % --- Store profiles into new FRmaps.linarm fields ---
+        % Map arm_sub_idx (1=Left, 2=Center, 3=Right) to expected_arm_binned_y_coords
+        arm_mapping = containers.Map(unique_binned_y_coords, {'left', 'center', 'right'}); % Map actual bin to name
+
+        for arm_sub_idx = 1:min(length(arms_cols_linear), 3) 
+            col_to_extract = arms_cols_linear(arm_sub_idx);
+            
+            % Find the original binned Y-coordinate that corresponds to this column
+            original_y_bin_for_col = col_to_extract + trimfactor_y_proj;
+
+            % Determine which arm (Left, Center, Right) this column corresponds to
+            [~, closest_idx] = min(abs(expected_arm_binned_y_coords - original_y_bin_for_col));
+            arm_name = arm_mapping(expected_arm_binned_y_coords(closest_idx));
+
+            if col_to_extract <= size(smFR_linear_2D, 2)
+                profile = smFR_linear_2D(:, col_to_extract);
+                % Pad profile to max_linear_map_storage_len if needed
+                if length(profile) > max_linear_map_storage_len
+                    profile = profile(1:max_linear_map_storage_len);
+                elseif length(profile) < max_linear_map_storage_len
+                    profile(end+1 : max_linear_map_storage_len) = NaN; 
+                end
+                
+                % Assign to the correct FRmaps field based on armtype and arm_name
+                if armtype == 1 % Outbound
+                    FRmaps.linarm.([arm_name 'out'])(IDclu, :) = profile'; % Transpose to match row vector
+                elseif armtype == 2 % Inbound
+                    FRmaps.linarm.([arm_name 'in'])(IDclu, :) = profile';
+                elseif armtype == 3 % Combined
+                    FRmaps.linarm.([arm_name 'combined'])(IDclu, :) = profile';
+                end
+            else
+                % If column out of bounds, fill corresponding FRmaps fields with NaNs
+                if armtype == 1 % Outbound
+                    FRmaps.linarm.([arm_name 'out'])(IDclu, :) = NaN;
+                elseif armtype == 2 % Inbound
+                    FRmaps.linarm.([arm_name 'in'])(IDclu, :) = NaN;
+                elseif armtype == 3 % Combined
+                    FRmaps.linarm.([arm_name 'combined'])(IDclu, :) = NaN;
+                end
+            end
+        end
+        % Fill any remaining sub-arm slots with NaN if fewer than 3 were found for this armtype
+        % This logic is now handled by the initial NaN pre-allocation and the specific assignments above.
+        % If a profile isn't found for a specific arm, it remains NaN from initialization.
+    end % End of armtype loop for linearized maps
+    
+    % --- End of Cluster Processing ---
+      % --- End of Cluster Processing ---
+     fprintf('Finished processing Cluster %d.\n', IDclu); % Removed debug print
+end % End of main processing loop for all clusters
+
+%% --- Save the FRmaps structure ---
+save('FRmaps_ProcessedSession.mat', 'FRmaps', '-v7.3'); 
