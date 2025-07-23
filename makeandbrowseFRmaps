@@ -1,0 +1,795 @@
+clear all;
+load('rec01_BehavElectrDataLFP.mat'); % Load original LFP data
+load('mutliwheelrunmarker.mat'); % Load multiwheelrunmarker.mat
+
+%% --- Pre-calculate Wheel Run Data (once) ---
+% This section processes all wheel runs and all clusters to create epFieldHolder
+% for efficiency, as it's independent of the interactive loop's currentCluIdx.
+
+UpCrossings = zeros(1, length(Laps.lapID));
+for k = 1:length(Laps.lapID)
+    % Ensure Laps.WhlLfpIndStartCW{k} is not empty before accessing end
+    if ~isempty(Laps.WhlLfpIndStartCW{k})
+        UpCrossings(k) = Laps.WhlLfpIndStartCW{k}(end) .* (20000/1250);
+    else
+        UpCrossings(k) = NaN; % Mark as NaN if no wheel run start
+    end
+end
+UpCrossingsSelect = UpCrossings(~isnan(UpCrossings))'; % Remove NaNs and transpose
+
+% Define wheel map parameters
+wheel_binsize = 125; % binsize in milliseconds
+smoothVAL_wheel = 1; % Smoothing for wheel map (sigma for 1D SmoothPix)
+samplingrate = 20000; % samples per second (Spike.res20kHz is at 20kHz)
+prestim = 0; % time before start of wheel run to look at
+poststim = 8; % time after start of wheel run to look at
+totalwindowtime = prestim + poststim;
+j = (1000/wheel_binsize); % conversion factor for milliseconds to bins per second
+
+epFieldHolder = cell(1, size(Clu.totClu, 2)); % Pre-allocate cell array
+for jj = 1:size(Clu.totClu, 2) % Loop through all clusters to fill epFieldHolder
+    res1 = Spike.res20kHz(Spike.totclu == jj); % Find all spike times for a given cluster
+    holder2 = zeros(length(UpCrossingsSelect), round(totalwindowtime * j)); % Pre-allocate for efficiency
+    
+    for k = 1:length(UpCrossingsSelect) % Loop through all of the selected wheel runs
+        % Define bin edges for histcounts
+        bin_edges = (UpCrossingsSelect(k) - (prestim*samplingrate)) : (samplingrate/j) : (UpCrossingsSelect(k) + (poststim*samplingrate));
+        
+        % Ensure bin_edges has at least two elements for histcounts
+        if length(bin_edges) < 2
+            continue; % Skip if bin edges are not valid
+        end
+
+        holder = res1(res1 > bin_edges(1) & res1 < bin_edges(end)); % Spikes within the window
+        
+        % Use histcounts to bin spikes, ensuring output size matches pre-allocation
+        counts = histcounts(holder, bin_edges);
+        if length(counts) > size(holder2, 2)
+            counts = counts(1:size(holder2, 2)); % Trim if too long
+        elseif length(counts) < size(holder2, 2)
+            counts(end+1 : size(holder2, 2)) = 0; % Pad with zeros if too short
+        end
+        holder2(k,:) = counts; % Store binned spike counts for this run
+    end
+    epFieldHolder{jj} = holder2; % Save each cluster's binned episode firing for each wheel run
+end
+
+% Housekeeping for wheel runs - remove trials with multiple wheel runs
+leaveouttrials = [0]'; % Assuming this is intended to be a column vector
+UpCrossingsAll = (1:length(UpCrossings))'; % All trial indices
+UpCrossingsAll = setdiff(UpCrossingsAll, find(multiwheelrun)); % Remove multi-wheel run trials
+UpCrossingsAll = setdiff(UpCrossingsAll, leaveouttrials); % Remove specified leave-out trials
+
+% Assuming these UpCrossings variants are loaded or defined elsewhere.
+% If not, you might need to define them based on your data structure.
+% For demonstration, I'll assume they are available and filter them.
+% Example placeholder if they are not loaded:
+% UpCrossingsLC = (1:length(Laps.lapID))'; % Placeholder
+% UpCrossingsCL = (1:length(Laps.lapID))'; % Placeholder
+% UpCrossingsCR = (1:length(Laps.lapID))'; % Placeholder
+% UpCrossingsRC = (1:length(Laps.lapID))'; % Placeholder
+
+% Filter new UpCrossings lists to remove multiwheelrun attempts
+if exist('UpCrossingsLC', 'var')
+    UpCrossingsLC_filtered = setdiff(UpCrossingsLC, find(multiwheelrun));
+else
+    UpCrossingsLC_filtered = []; % Handle case where variable might not exist
+    warning('UpCrossingsLC not found. Left wheel map will be empty.');
+end
+if exist('UpCrossingsCL', 'var')
+    UpCrossingsCL_filtered = setdiff(UpCrossingsCL, find(multiwheelrun));
+else
+    UpCrossingsCL_filtered = [];
+    warning('UpCrossingsCL not found. Center-Left wheel map will be empty.');
+end
+if exist('UpCrossingsCR', 'var')
+    UpCrossingsCR_filtered = setdiff(UpCrossingsCR, find(multiwheelrun));
+else
+    UpCrossingsCR_filtered = [];
+    warning('UpCrossingsCR not found. Center-Right wheel map will be empty.');
+end
+if exist('UpCrossingsRC', 'var')
+    UpCrossingsRC_filtered = setdiff(UpCrossingsRC, find(multiwheelrun));
+else
+    UpCrossingsRC_filtered = [];
+    warning('UpCrossingsRC not found. Right wheel map will be empty.');
+end
+
+
+% --- Initialize Loop Variables ---
+currentCluIdx = 1; % Start with the first cluster
+maxClu = max(Spike.totclu); % Get the total number of clusters
+
+% Initialize parameters that can be changed dynamically
+smoothVAL = 50; % Default initial value for 2D map smoothing
+divXY = 6;     % Default initial value for 2D map bin size
+
+% Parameters for Linearized maps (now dynamic)
+smoothVAL_linear = 1; % Smoothing for linearized map (sigma in bins)
+divLinear = 10;        % Bin size for linearized map (in original units of snapIndex/adjustedLineSnap)
+
+minSpeed = 50; % Minimum speed threshold for position data (mm/sec)
+
+% Initialize mode for interactive control: 'smooth', 'bin', or 'linear'
+mode = 'smooth'; % Start in 2D smoothing adjustment mode
+
+% Create the figure once outside the loop
+fig_handle = figure(1);
+set(fig_handle, 'Units', 'normalized', 'OuterPosition', [0 0 1 1]); % Maximize figure
+set(fig_handle, 'KeyPressFcn', @(src, event)setappdata(src, 'LastKey', event.Key)); % Store key press
+
+% Initialize annotation handles to update them later
+totalSpikesAnno = [];
+meanFRAnno = [];
+divXYAnno = [];
+smoothVALAnno = [];
+MAnno = [];
+divLinearAnno = [];
+smoothVAL_linearAnno = [];
+
+
+% --- Main Interactive Loop ---
+while currentCluIdx >= 1 && currentCluIdx <= maxClu
+    
+    IDclu = currentCluIdx;
+    
+    % Flag to determine if data processing and plotting needs to be re-done
+    reprocess_and_plot = true; 
+    
+    fprintf('DEBUG: Outer loop starting for IDclu: %d\n', IDclu); % DEBUG PRINT
+    
+    % Inner loop for handling key presses within the current cluster/mode
+    while true 
+        
+        if reprocess_and_plot
+            disp(['Processing Cluster ' num2str(IDclu) ...
+                  ' (2D Smooth: ' num2str(smoothVAL) ', 2D Bin: ' num2str(divXY) ...
+                  ', Linear Smooth: ' num2str(smoothVAL_linear) ', Linear Bin: ' num2str(divLinear) ')']);
+            
+            % --- Data Filtering for Tracking (2D) ---
+            xTr = Track.xPix(Track.xPix > 1 & Track.yPix > 1 & Track.speed_MMsec > minSpeed);
+            yTr = Track.yPix(Track.xPix > 1 & Track.yPix > 1 & Track.speed_MMsec > minSpeed);
+            
+            % --- Data Filtering for Spikes (2D) ---
+            sp = find(Spike.totclu == IDclu & Spike.xPix > 1 & Spike.yPix > 1 & Spike.speed_MMsec > minSpeed);
+            xSp = Spike.xPix(sp);
+            ySp = Spike.yPix(sp);
+            
+            % --- Mean Firing Rate Calculation (Optional) ---
+            if exist('xml', 'var') && isfield(xml, 'lfpSampleRate')
+                meanFR = round((length(xSp) / (length(xTr)/xml.lfpSampleRate)) * 10) / 10;
+            else
+                warning('xml.lfpSampleRate not found, meanFR calculation skipped.');
+                meanFR = NaN;
+            end
+            
+            % --- Spatial Binning (2D Map) ---
+            maxX_Tr = max(xTr);
+            maxY_Tr = max(yTr);
+            
+            mapSizeX = round(maxX_Tr / divXY) + 2;
+            mapSizeY = round(maxY_Tr / divXY) + 2;
+            
+            binnedSpikes = full(sparse(round(xSp/divXY)+1, round(ySp/divXY)+1, 1, mapSizeX, mapSizeY));
+            binnedTime = full(sparse(round(xTr/divXY)+1, round(yTr/divXY)+1, 1/xml.lfpSampleRate, mapSizeX, mapSizeY));
+            
+            binnedFR = binnedSpikes ./ binnedTime;
+            
+            minBinX = floor(min(xTr)/divXY);
+            minBinY = floor(min(yTr)/divXY);
+            
+            if minBinX > 0
+                binnedFR(1:minBinX,:) = [];
+            end
+            if minBinY > 0
+                binnedFR(:,1:minBinY) = [];
+            end
+            
+            binnedFR(isnan(binnedFR))=0;
+            binnedFR(isinf(binnedFR))=0;
+            
+            % --- Determine Map Dimensions for Smoothing (`M`) ---
+            [rowsFR, colsFR] = size(binnedFR);
+            M = max(rowsFR, colsFR); 
+            
+            % --- Smoothing (2D Map) ---
+            if smoothVAL == 0
+                smFR = smooth2a(binnedFR,1,1);
+            else
+                smFR = SmoothPix(binnedFR,[smoothVAL./M smoothVAL./M]);
+            end
+            normSmoothedFR = smFR ./ sum(smFR(:));
+
+            % --- Calculate Wheel Maps for current IDclu ---
+            current_epFieldHolder = epFieldHolder{IDclu};
+            fieldseq = zeros(length(Laps.lapID), size(current_epFieldHolder, 2));
+
+            for f = 1:length(Laps.lapID)
+                if f <= size(current_epFieldHolder, 1)
+                    fieldseq(f,:) = SmoothPix(current_epFieldHolder(f,:), [smoothVAL_wheel 0]); 
+                else
+                    fieldseq(f,:) = NaN; 
+                end
+            end
+            fieldseq(isnan(fieldseq)) = 0; 
+            
+            % Original single wheel map
+            allWheelMap = squeeze(mean(fieldseq(UpCrossingsAll, :), 1)); 
+            allWheelMap = allWheelMap .* (1000 / wheel_binsize); 
+            
+            % New wheel maps based on specific trial selections
+            leftwheel = [];
+            if ~isempty(UpCrossingsLC_filtered)
+                leftwheel = squeeze(mean(fieldseq(UpCrossingsLC_filtered, :), 1));
+                leftwheel = leftwheel .* (1000 / wheel_binsize);
+            end
+
+            centerLwheel = [];
+            if ~isempty(UpCrossingsCL_filtered)
+                centerLwheel = squeeze(mean(fieldseq(UpCrossingsCL_filtered, :), 1));
+                centerLwheel = centerLwheel .* (1000 / wheel_binsize);
+            end
+
+            centerRwheel = [];
+            if ~isempty(UpCrossingsCR_filtered)
+                centerRwheel = squeeze(mean(fieldseq(UpCrossingsCR_filtered, :), 1));
+                centerRwheel = centerRwheel .* (1000 / wheel_binsize);
+            end
+
+            rightwheel = [];
+            if ~isempty(UpCrossingsRC_filtered)
+                rightwheel = squeeze(mean(fieldseq(UpCrossingsRC_filtered, :), 1));
+                rightwheel = rightwheel .* (1000 / wheel_binsize);
+            end
+
+            % --- Calculate Linearized Maps for current IDclu (using provided code) ---
+            % Determine max possible length for linearized maps for pre-allocation
+            max_linear_map_storage_len = round(max(Track.xPixProj(:)) / divLinear) + 2; % Safer pre-allocation size
+            
+            % Ensure armMaps is initialized with correct dimensions for current IDclu
+            armMaps = NaN(maxClu, 3, 3, max_linear_map_storage_len); 
+
+            % Loop through arm types (outbound, inbound, combined)
+            for armtype = [1 2 3]
+                % Reset variables for each armtype
+                xTr_linear_temp = [];
+                yTr_linear_temp = [];
+                sp_linear_temp = [];
+                
+                % Filter data based on armtype and speed
+                track_filter_base = (Track.xPix > 0 & Track.yPix > 0 & Track.speed_MMsec > minSpeed);
+                spike_filter_base = (Spike.totclu == IDclu & Spike.xPix>0 & Spike.yPix>0 & Spike.speed_MMsec > minSpeed);
+
+                switch armtype
+                    case 1 % Outbound
+                        filter_tr_arm = (Track.outbound == 1);
+                        filter_sp_arm = ismember(Spike.res, find(Track.outbound));
+                    case 2 % Inbound
+                        filter_tr_arm = (Track.inbound == 1);
+                        filter_sp_arm = ismember(Spike.res, find(Track.inbound));
+                    case 3 % Combined
+                        filter_tr_arm = (Track.inbound == 1 | Track.outbound == 1);
+                        filter_sp_arm = ismember(Spike.res, find(Track.inbound | Track.outbound));
+                end
+                
+                xTr_linear_temp = Track.xPixProj(track_filter_base & filter_tr_arm);
+                yTr_linear_temp = Track.yPixProj(track_filter_base & filter_tr_arm);
+                sp_linear_temp = find(spike_filter_base & filter_sp_arm);
+                
+                fprintf('DEBUG: Linear Map - IDclu %d, ArmType %d. xTr_linear_temp size: %s, yTr_linear_temp size: %s, sp_linear_temp size: %s\n', ...
+                    IDclu, armtype, mat2str(size(xTr_linear_temp)), mat2str(size(yTr_linear_temp)), mat2str(size(sp_linear_temp))); % DEBUG PRINT
+
+                % Ensure filtered data is not empty
+                if isempty(xTr_linear_temp) || isempty(yTr_linear_temp) || isempty(sp_linear_temp)
+                    fprintf('DEBUG: Linear Map - IDclu %d, ArmType %d. Skipping due to empty filtered data.\n', IDclu, armtype); % DEBUG PRINT
+                    continue; 
+                end
+
+                xSpAll_linear = Spike.xPixProj(sp_linear_temp);
+                ySpAll_linear = Spike.yPixProj(sp_linear_temp);
+
+                xSp_linear = xSpAll_linear(xSpAll_linear > 1);
+                ySp_linear = ySpAll_linear(xSpAll_linear > 1);
+
+                % Bin coordinates for linearized map
+                max_xTr_linear = max(xTr_linear_temp);
+                max_yTr_linear = max(yTr_linear_temp);
+                
+                if isempty(max_xTr_linear) || max_xTr_linear < divLinear
+                    map_size_x_linear = 2; % Minimum size
+                else
+                    map_size_x_linear = round(max_xTr_linear / divLinear) + 2;
+                end
+                if isempty(max_yTr_linear) || max_yTr_linear < divLinear
+                    map_size_y_linear = 2; % Minimum size
+                else
+                    map_size_y_linear = round(max_yTr_linear / divLinear) + 2;
+                end
+
+                binnedSpikes_linear = full(sparse(round(xSp_linear/divLinear)+1, round(ySp_linear/divLinear)+1, 1, ...
+                                                  map_size_x_linear, map_size_y_linear));
+                binnedTime_linear = full(sparse(round(xTr_linear_temp/divLinear)+1, round(yTr_linear_temp/divLinear)+1, 1/xml.lfpSampleRate, ...
+                                                map_size_x_linear, map_size_y_linear));
+                binnedFR_linear = binnedSpikes_linear ./ binnedTime_linear;
+                
+                % Trim leading empty rows/columns
+                if ~isempty(min(xTr_linear_temp))
+                    minBinX_linear = floor(min(xTr_linear_temp)/divLinear);
+                else
+                    minBinX_linear = 0;
+                end
+                if ~isempty(min(yTr_linear_temp))
+                    minBinY_linear = floor(min(yTr_linear_temp)/divLinear);
+                else
+                    minBinY_linear = 0;
+                end
+
+                if minBinX_linear > 0 && minBinX_linear < size(binnedFR_linear,1)
+                    binnedFR_linear(1:minBinX_linear,:) = [];
+                end
+                if minBinY_linear > 0 && minBinY_linear < size(binnedFR_linear,2)
+                    binnedFR_linear(:,1:minBinY_linear) = [];
+                end
+
+                binnedFR_linear(isnan(binnedFR_linear))=0;
+                binnedFR_linear(isinf(binnedFR_linear))=0;
+
+                fprintf('DEBUG: Linear Map - IDclu %d, ArmType %d. binnedFR_linear size: %s\n', IDclu, armtype, mat2str(size(binnedFR_linear))); % DEBUG PRINT
+
+                % M for linearized map (based on spike projection extent)
+                M_linear_calc = max([round(max(xSp_linear)/divLinear+1) round(max(ySp_linear)/divLinear+1)]);
+                if isempty(M_linear_calc) || M_linear_calc == 0
+                    M_linear_calc = 1; % Prevent division by zero if no spikes
+                end
+
+                % Smoothing for linearized map (horizontal smoothing only)
+                smFR_linear_2D = SmoothPix(binnedFR_linear, [0 smoothVAL_linear]); 
+                
+                fprintf('DEBUG: Linear Map - IDclu %d, ArmType %d. smFR_linear_2D size: %s\n', IDclu, armtype, mat2str(size(smFR_linear_2D))); % DEBUG PRINT
+
+                % Extract arm profiles from the smoothed linearized map
+                [~, arms_cols_linear,~] = find(mean(binnedTime_linear)); 
+                
+                trimfactor_y_proj = floor(min(yTr_linear_temp)/divLinear); 
+                arms_cols_linear = arms_cols_linear - trimfactor_y_proj; 
+                
+                arms_cols_linear = arms_cols_linear(arms_cols_linear > 0 & arms_cols_linear <= size(smFR_linear_2D,2));
+                
+                fprintf('DEBUG: Linear Map - IDclu %d, ArmType %d. arms_cols_linear: %s\n', IDclu, armtype, mat2str(arms_cols_linear)); % DEBUG PRINT
+
+                if ~isempty(arms_cols_linear)
+                    for arm_sub_idx = 1:min(length(arms_cols_linear), 3) 
+                        col_to_extract = arms_cols_linear(arm_sub_idx);
+                        if col_to_extract <= size(smFR_linear_2D, 2)
+                            profile = smFR_linear_2D(:, col_to_extract);
+                            if length(profile) > max_linear_map_storage_len
+                                profile = profile(1:max_linear_map_storage_len);
+                            elseif length(profile) < max_linear_map_storage_len
+                                profile(end+1 : max_linear_map_storage_len) = NaN; 
+                            end
+                            armMaps(IDclu, armtype, arm_sub_idx, :) = profile;
+                            fprintf('DEBUG: Linear Map - IDclu %d, ArmType %d, SubArm %d. Profile size: %s\n', IDclu, armtype, arm_sub_idx, mat2str(size(profile))); % DEBUG PRINT
+                        else
+                            armMaps(IDclu, armtype, arm_sub_idx, :) = NaN; 
+                            fprintf('DEBUG: Linear Map - IDclu %d, ArmType %d, SubArm %d. Column index out of bounds.\n', IDclu, armtype, arm_sub_idx); % DEBUG PRINT
+                        end
+                    end
+                else
+                    armMaps(IDclu, armtype, :, :) = NaN; 
+                    fprintf('DEBUG: Linear Map - IDclu %d, ArmType %d. No arms_cols_linear found.\n', IDclu, armtype); % DEBUG PRINT
+                end
+            end % End of armtype loop for linearized maps
+
+            % --- Visualization ---
+            clf(fig_handle); % Clear the figure contents for the new plot.
+            
+            % Panel 1 (Top-Left): Tracking and Spikes (2D)
+            subplot(2,2,1); 
+            plot(yTr, xTr, 'Color', [0.7 0.7 0.7], 'LineWidth', 0.5);
+            hold on;
+            plot(ySp, xSp, 'r.', 'MarkerSize', 8);
+            hold off;
+            title(['Cluster ' num2str(IDclu) ' Tracking & Spikes (2D)']);
+            xlabel('Y Position (pixels)');
+            ylabel('X Position (pixels)');
+            axis equal tight;
+            box on;
+            set(gca, 'YDir', 'normal');
+            
+            % Panel 2 (Top-Right): 2D Place Field Map
+            subplot(2,2,2); 
+            imagesc(smFR);
+            colormap('jet');
+            cb = colorbar;
+            ylabel(cb, 'Hz (Firing Rate)');
+            axis xy;
+            axis equal tight; % Added axis equal to ensure non-warped aspect ratio
+            box on;
+            title(['Cluster ' num2str(IDclu) ' 2D Place Field Map']);
+            xlabel('X Bin');
+            ylabel('Y Bin');
+            
+            % Panel 3 (Bottom-Left): Wheel Run Maps (Multiple Line Plots)
+            subplot(2,2,3); 
+            hold on; % Hold on to plot multiple lines
+            max_fr_wheel_plot = 0; % For consistent Y-axis limits
+
+            % Plot original allWheelMap (solid black, thicker)
+            if ~isempty(allWheelMap) && ~all(isnan(allWheelMap))
+                time_bins_ms = (1:length(allWheelMap)) * wheel_binsize; 
+                plot(time_bins_ms, allWheelMap, 'LineWidth', 2.5, 'Color', 'k', 'LineStyle', '-', 'DisplayName', 'All Runs (Black Solid)'); % Thicker line
+                max_fr_wheel_plot = max(max_fr_wheel_plot, max(allWheelMap(:), [], 'omitnan'));
+            end
+
+            % Plot new wheel maps with different line styles and colors
+            if ~isempty(leftwheel) && ~all(isnan(leftwheel))
+                time_bins_ms = (1:length(leftwheel)) * wheel_binsize; 
+                plot(time_bins_ms, leftwheel, 'LineWidth', 1.5, 'Color', 'b', 'LineStyle', '-', 'DisplayName', 'Left Wheel (Blue Solid)'); 
+                max_fr_wheel_plot = max(max_fr_wheel_plot, max(leftwheel(:), [], 'omitnan'));
+            end
+            if ~isempty(centerLwheel) && ~all(isnan(centerLwheel))
+                time_bins_ms = (1:length(centerLwheel)) * wheel_binsize; 
+                plot(time_bins_ms, centerLwheel, 'LineWidth', 1.5, 'Color', [1 0.65 0], 'LineStyle', ':', 'DisplayName', 'Center-Left Wheel (Orange Dotted)'); % Orange
+                max_fr_wheel_plot = max(max_fr_wheel_plot, max(centerLwheel(:), [], 'omitnan'));
+            end
+            if ~isempty(centerRwheel) && ~all(isnan(centerRwheel))
+                time_bins_ms = (1:length(centerRwheel)) * wheel_binsize; 
+                plot(time_bins_ms, centerRwheel, 'LineWidth', 1.5, 'Color', [1 0.65 0], 'LineStyle', '-', 'DisplayName', 'Center-Right Wheel (Orange Solid)'); % Orange
+                max_fr_wheel_plot = max(max_fr_wheel_plot, max(centerRwheel(:), [], 'omitnan'));
+            end
+            if ~isempty(rightwheel) && ~all(isnan(rightwheel))
+                time_bins_ms = (1:length(rightwheel)) * wheel_binsize; 
+                plot(time_bins_ms, rightwheel, 'LineWidth', 1.5, 'Color', [0 0.5 0], 'LineStyle', '-', 'DisplayName', 'Right Wheel (Green Solid)'); % Green color
+                max_fr_wheel_plot = max(max_fr_wheel_plot, max(rightwheel(:), [], 'omitnan'));
+            end
+
+            hold off; % Release hold
+            
+            if max_fr_wheel_plot > 0
+                ylabel('Firing Rate (Hz)');
+                xlabel('Time from Wheel Run Start (ms)'); 
+                title('Wheel Run Maps');
+                legend('show', 'Location', 'best'); % Show legend for all lines
+                grid on;
+                % Set X limits based on the longest wheel map
+                max_len_wheel = 0;
+                if ~isempty(allWheelMap), max_len_wheel = max(max_len_wheel, length(allWheelMap)); end
+                if ~isempty(leftwheel), max_len_wheel = max(max_len_wheel, length(leftwheel)); end
+                if ~isempty(centerLwheel), max_len_wheel = max(max_len_wheel, length(centerLwheel)); end
+                if ~isempty(centerRwheel), max_len_wheel = max(max_len_wheel, length(centerRwheel)); end
+                if ~isempty(rightwheel), max_len_wheel = max(max_len_wheel, length(rightwheel)); end
+                
+                if max_len_wheel > 0
+                    xlim([min(time_bins_ms) max_len_wheel * wheel_binsize]); 
+                end
+                ylim([0 max_fr_wheel_plot * 1.1]); % Set Y limit based on max FR
+            else
+                text(0.5, 0.5, 'Wheel map data not available', 'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle');
+                axis off;
+            end
+            box on;
+
+            % Panel 4 (Bottom-Right): Linearized Maps (Composite Image)
+            subplot(2,2,4); 
+            
+            % Extract individual linearized maps for the current cluster
+            left_outbound = squeeze(armMaps(IDclu, 1, 1, :));
+            left_combined = squeeze(armMaps(IDclu, 3, 1, :)); 
+            left_inbound = squeeze(armMaps(IDclu, 2, 1, :));
+
+            center_outbound = squeeze(armMaps(IDclu, 1, 2, :));
+            center_combined = squeeze(armMaps(IDclu, 3, 2, :));
+            center_inbound = squeeze(armMaps(IDclu, 2, 2, :));
+
+            right_outbound = squeeze(armMaps(IDclu, 1, 3, :));
+            right_combined = squeeze(armMaps(IDclu, 3, 3, :));
+            right_inbound = squeeze(armMaps(IDclu, 2, 3, :));
+
+            % Determine max height for the composite map based on *actual non-NaN content*
+            all_linear_maps_for_display = {left_outbound, left_combined, left_inbound, ...
+                               center_outbound, center_combined, center_inbound, ...
+                               right_outbound, right_combined, right_inbound};
+            
+            max_actual_content_height = 0;
+            max_fr_data = 0; % Initialize max firing rate for scaling
+            
+            for map_idx = 1:length(all_linear_maps_for_display)
+                current_map = all_linear_maps_for_display{map_idx};
+                if ~isempty(current_map) && ~all(isnan(current_map))
+                    % Find the last non-NaN element for height
+                    last_non_nan_idx = find(~isnan(current_map), 1, 'last');
+                    if ~isempty(last_non_nan_idx)
+                        max_actual_content_height = max(max_actual_content_height, last_non_nan_idx);
+                    end
+                    % Find max firing rate for color scaling, ensuring it's not negative
+                    max_fr_data = max(max_fr_data, max(current_map(:), [], 'omitnan'));
+                end
+            end
+            
+            % If no valid data, set a default small height or handle gracefully
+            if max_actual_content_height == 0
+                max_actual_content_height = 10; % Small default height if no data
+            end
+            if max_fr_data == 0
+                max_fr_data = 1; % Prevent caxis from being [X 0] if no spikes
+            end
+
+            % Define spacing parameters
+            map_width_bins = 2; % Each map is 2 bins wide
+            intra_arm_space = 2; % 2 bins space between maps within an arm group
+            inter_arm_space = 10; % 10 bins space between arm groups
+            
+            % Add an extra white space column at the start and end
+            border_white_space_width = map_width_bins; 
+
+            % Calculate total width of the composite map, including border white spaces
+            total_width = (map_width_bins * 3 + intra_arm_space * 2) * 3 + inter_arm_space * 2 + (2 * border_white_space_width);
+            
+            % Initialize composite map with NaNs (for transparent background before drawing white rectangles)
+            composite_linear_map = NaN(max_actual_content_height, total_width);
+            
+            % Starting X position for placing maps, after the first border white space
+            current_x_pos = border_white_space_width + 1; 
+
+            % Helper logic for placing maps (inlined)
+            map_data_list = {left_outbound, left_combined, left_inbound, ...
+                             center_outbound, center_combined, center_inbound, ...
+                             right_outbound, right_combined, right_inbound};
+
+            for i = 1:length(map_data_list)
+                map_data = map_data_list{i};
+                
+                if ~isempty(map_data) && ~all(isnan(map_data))
+                    % Trim map_data to its actual content height before reshaping
+                    last_non_nan_in_map = find(~isnan(map_data), 1, 'last');
+                    if isempty(last_non_nan_in_map)
+                        trimmed_map_data = [];
+                    else
+                        trimmed_map_data = map_data(1:last_non_nan_in_map);
+                    end
+
+                    if ~isempty(trimmed_map_data)
+                        map_data_reshaped = repmat(trimmed_map_data(:), 1, map_width_bins); % Make it 2 bins wide
+                        
+                        % Pad map_data_reshaped up to max_actual_content_height with NaNs
+                        if size(map_data_reshaped, 1) < max_actual_content_height
+                            temp_pad = NaN(max_actual_content_height, map_width_bins); 
+                            temp_pad(1:size(map_data_reshaped, 1), :) = map_data_reshaped;
+                            map_data_reshaped = temp_pad;
+                        end
+                        
+                        % Place map into composite_linear_map
+                        end_x = current_x_pos + map_width_bins - 1;
+                        if end_x <= size(composite_linear_map, 2)
+                            composite_linear_map(:, current_x_pos:end_x) = map_data_reshaped;
+                        else
+                            warning('Attempted to place map outside composite_map bounds. Skipping.');
+                        end
+                    end
+                end
+                
+                % Advance current_x_pos based on spacing
+                if mod(i, 3) == 0 % After every 3 maps (an arm group)
+                    if i < length(map_data_list) % Not after the last group
+                        current_x_pos = current_x_pos + map_width_bins + inter_arm_space;
+                    else % After the very last map
+                        current_x_pos = current_x_pos + map_width_bins;
+                    end
+                else % Between maps within an arm group
+                    current_x_pos = current_x_pos + map_width_bins + intra_arm_space;
+                end
+            end
+            
+            % Display the composite map
+            if max_actual_content_height > 0 && ~all(isnan(composite_linear_map(:)))
+                imagesc(composite_linear_map);
+                colormap('jet'); % Apply standard jet colormap
+                caxis([0, max_fr_data]); % Set color axis to actual data range
+                
+                hold on; % Keep hold on to draw white rectangles
+
+                % --- Draw White Rectangles for Spacing ---
+                % Y-range for all rectangles
+                rect_y_start = 0.5; % Start from the bottom edge of the first pixel
+                rect_height = max_actual_content_height; % Span the full height of the data
+
+                % 1. Left Border White Space
+                rectangle('Position', [0.5, rect_y_start, border_white_space_width, rect_height], ...
+                          'FaceColor', 'w', 'EdgeColor', 'none');
+
+                % 2. Intra-arm and Inter-arm White Spaces
+                current_rect_x_start = border_white_space_width + 1; % Start of where data begins
+                for i = 1:length(map_data_list)
+                    current_rect_x_start = current_rect_x_start + map_width_bins; % Move past the data block
+
+                    if mod(i, 3) == 0 % After every 3 maps (an arm group)
+                        if i < length(map_data_list) % Not after the last group
+                            % This is an inter-arm space
+                            rectangle('Position', [current_rect_x_start - 0.5, rect_y_start, inter_arm_space, rect_height], ...
+                                      'FaceColor', 'w', 'EdgeColor', 'none');
+                            current_rect_x_start = current_rect_x_start + inter_arm_space;
+                        end
+                    else % Between maps within an arm group
+                        % This is an intra-arm space
+                        rectangle('Position', [current_rect_x_start - 0.5, rect_y_start, intra_arm_space, rect_height], ...
+                                  'FaceColor', 'w', 'EdgeColor', 'none');
+                        current_rect_x_start = current_rect_x_start + intra_arm_space;
+                    end
+                end
+
+                % 3. Right Border White Space
+                rectangle('Position', [total_width - border_white_space_width + 0.5, rect_y_start, border_white_space_width, rect_height], ...
+                          'FaceColor', 'w', 'EdgeColor', 'none');
+
+                hold off; % Release hold
+                
+                cb_linear = colorbar;
+                ylabel(cb_linear, 'Hz (Firing Rate)');
+                axis tight; % Fit content
+                axis xy; % Correct orientation
+                title(['Cluster ' num2str(IDclu) ' Linearized Place Field Maps']);
+                ylabel('Linear Position Bin');
+                
+                % Custom X-axis ticks and labels
+                % Adjust tick positions to account for the new border white space
+                x_tick_positions = [ ...
+                    border_white_space_width + map_width_bins/2, ... % Left Outbound
+                    border_white_space_width + map_width_bins*1.5 + intra_arm_space, ... % Left Combined
+                    border_white_space_width + map_width_bins*2.5 + intra_arm_space*2, ... % Left Inbound
+                    ...
+                    border_white_space_width + (map_width_bins*3 + intra_arm_space*2) + inter_arm_space + map_width_bins/2, ... % Center Outbound
+                    border_white_space_width + (map_width_bins*3 + intra_arm_space*2) + inter_arm_space + map_width_bins*1.5 + intra_arm_space, ... % Center Combined
+                    border_white_space_width + (map_width_bins*3 + intra_arm_space*2) + inter_arm_space + map_width_bins*2.5 + intra_arm_space*2, ... % Center Inbound
+                    ...
+                    border_white_space_width + (map_width_bins*3 + intra_arm_space*2)*2 + inter_arm_space*2 + map_width_bins/2, ... % Right Outbound
+                    border_white_space_width + (map_width_bins*3 + intra_arm_space*2)*2 + inter_arm_space*2 + map_width_bins*1.5 + intra_arm_space, ... % Right Combined
+                    border_white_space_width + (map_width_bins*3 + intra_arm_space*2)*2 + inter_arm_space*2 + map_width_bins*2.5 + intra_arm_space*2 ... % Right Inbound
+                ];
+                
+                x_tick_labels = {'L-Out', 'L-Comb', 'L-In', 'C-Out', 'C-Comb', 'C-In', 'R-Out', 'R-Comb', 'R-In'};
+                
+                xticks(x_tick_positions);
+                xticklabels(x_tick_labels);
+                xtickangle(45); % Angle labels for readability
+                
+            else
+                text(0.5, 0.5, 'Linearized map data not available', 'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle');
+                axis off;
+            end
+            box on;
+            
+            % --- Display Additional Information at the Bottom ---
+            textYPos = 0.01; 
+            lineHeight = 0.018; % Adjusted for more lines
+
+            totalSpikesAnno = annotation(fig_handle, 'textbox', [0.02 textYPos+6*lineHeight 0.45 lineHeight], ...
+                                         'String', sprintf('Total Spikes: %d', length(xSp)), ...
+                                         'EdgeColor', 'none', 'FontSize', 8, 'FontWeight', 'normal', ...
+                                         'VerticalAlignment', 'bottom', 'HorizontalAlignment', 'left');
+            meanFRAnno = annotation(fig_handle, 'textbox', [0.02 textYPos+5*lineHeight 0.45 lineHeight], ...
+                                    'String', sprintf('Mean FR: %.2f Hz', meanFR), ...
+                                    'EdgeColor', 'none', 'FontSize', 8, 'FontWeight', 'normal', ...
+                                    'VerticalAlignment', 'bottom', 'HorizontalAlignment', 'left');
+            divXYAnno = annotation(fig_handle, 'textbox', [0.02 textYPos+4*lineHeight 0.45 lineHeight], ...
+                                   'String', sprintf('2D Bin (divXY): %d', divXY), ...
+                                   'EdgeColor', 'none', 'FontSize', 8, 'FontWeight', 'normal', ...
+                                   'VerticalAlignment', 'bottom', 'HorizontalAlignment', 'left');
+            smoothVALAnno = annotation(fig_handle, 'textbox', [0.02 textYPos+3*lineHeight 0.45 lineHeight], ...
+                                       'String', sprintf('2D Smooth (smoothVAL): %d', smoothVAL), ...
+                                       'EdgeColor', 'none', 'FontSize', 8, 'FontWeight', 'normal', ...
+                                       'VerticalAlignment', 'bottom', 'HorizontalAlignment', 'left');
+            MAnno = annotation(fig_handle, 'textbox', [0.02 textYPos+2*lineHeight 0.45 lineHeight], ...
+                               'String', sprintf('2D M (max dim, binnedFR): %d', M), ... 
+                               'EdgeColor', 'none', 'FontSize', 8, 'FontWeight', 'normal', ...
+                               'VerticalAlignment', 'bottom', 'HorizontalAlignment', 'left');
+            divLinearAnno = annotation(fig_handle, 'textbox', [0.02 textYPos+1*lineHeight 0.45 lineHeight], ...
+                                       'String', sprintf('Linear Bin (divLinear): %d', divLinear), ...
+                                       'EdgeColor', 'none', 'FontSize', 8, 'FontWeight', 'normal', ...
+                                       'VerticalAlignment', 'bottom', 'HorizontalAlignment', 'left');
+            smoothVAL_linearAnno = annotation(fig_handle, 'textbox', [0.02 textYPos+0*lineHeight 0.45 lineHeight], ...
+                                              'String', sprintf('Linear Smooth (smoothVAL_linear): %d', smoothVAL_linear), ...
+                                              'EdgeColor', 'none', 'FontSize', 8, 'FontWeight', 'normal', ...
+                                              'VerticalAlignment', 'bottom', 'HorizontalAlignment', 'left');
+            
+            reprocess_and_plot = false; 
+        end
+        
+        % --- Highlight active parameter based on mode ---
+        set([totalSpikesAnno, meanFRAnno, divXYAnno, smoothVALAnno, MAnno, divLinearAnno, smoothVAL_linearAnno], 'FontWeight', 'normal', 'Color', 'k'); 
+        switch mode
+            case 'smooth'
+                set(smoothVALAnno, 'FontWeight', 'bold', 'Color', 'blue');
+                disp('Mode: Smoothing (2D Map). Use Up/Down arrows to adjust smoothVAL. Press "s" to switch to binning. Press "l" for linear map. Left/Right to navigate. ENTER to exit.');
+            case 'bin'
+                set(divXYAnno, 'FontWeight', 'bold', 'Color', 'blue');
+                disp('Mode: Binning (2D Map). Use Up/Down arrows to adjust divXY. Press "s" to switch to smoothing. Press "l" for linear map. Left/Right to navigate. ENTER to exit.');
+            case 'linear'
+                set(smoothVAL_linearAnno, 'FontWeight', 'bold', 'Color', 'blue');
+                disp('Mode: Linear Map Smoothing. Use Up/Down arrows to adjust smoothVAL_linear. Press "s" for 2D smoothing, "b" for 2D binning. Left/Right to navigate. ENTER to exit.');
+        end
+        drawnow; 
+
+        % --- Wait for Key Press ---
+        setappdata(fig_handle, 'LastKey', ''); 
+        waitforbuttonpress; 
+        currKey = getappdata(fig_handle, 'LastKey'); 
+        
+        % --- Handle Key Press ---
+        % Universal Navigation and Exit
+        if strcmp(currKey, 'leftarrow')
+            currentCluIdx = currentCluIdx - 1;
+            reprocess_and_plot = true; 
+            fprintf('DEBUG: currentCluIdx after leftarrow: %d\n', currentCluIdx); 
+            break; 
+        elseif strcmp(currKey, 'rightarrow')
+            currentCluIdx = currentCluIdx + 1;
+            reprocess_and_plot = true; 
+            fprintf('DEBUG: currentCluIdx after rightarrow: %d\n', currentCluIdx); 
+            break; 
+        elseif strcmp(currKey, 'return') 
+            break; 
+        end
+
+        % Mode-specific adjustments and toggles
+        switch currKey
+            case 's' % Toggle between 2D smooth and 2D bin modes, or switch from linear to 2D smooth
+                if strcmp(mode, 'smooth')
+                    mode = 'bin';
+                elseif strcmp(mode, 'bin')
+                    mode = 'smooth';
+                elseif strcmp(mode, 'linear')
+                    mode = 'smooth'; % From linear to 2D smooth
+                end
+                reprocess_and_plot = true; 
+            case 'b' % Switch to 2D bin mode (from smooth or linear)
+                mode = 'bin';
+                reprocess_and_plot = true;
+            case 'l' % Switch to linear map adjustment mode
+                mode = 'linear';
+                reprocess_and_plot = true;
+            case 'uparrow'
+                if strcmp(mode, 'smooth')
+                    smoothVAL = smoothVAL + 5;
+                    disp(['2D smoothVAL increased to: ' num2str(smoothVAL)]);
+                elseif strcmp(mode, 'bin')
+                    divXY = divXY + 1;
+                    disp(['2D divXY increased to: ' num2str(divXY)]);
+                elseif strcmp(mode, 'linear')
+                    smoothVAL_linear = smoothVAL_linear + 5; % Adjust by 5 for linear smooth
+                    disp(['Linear smoothVAL_linear increased to: ' num2str(smoothVAL_linear)]);
+                end
+                reprocess_and_plot = true; 
+            case 'downarrow'
+                if strcmp(mode, 'smooth')
+                    smoothVAL = max(0, smoothVAL - 5);
+                    disp(['2D smoothVAL decreased to: ' num2str(smoothVAL)]);
+                elseif strcmp(mode, 'bin')
+                    divXY = max(1, divXY - 1); 
+                    disp(['2D divXY decreased to: ' num2str(divXY)]);
+                elseif strcmp(mode, 'linear')
+                    smoothVAL_linear = max(0, smoothVAL_linear - 5); % Adjust by 5 for linear smooth
+                    disp(['Linear smoothVAL_linear decreased to: ' num2str(smoothVAL_linear)]);
+                end
+                reprocess_and_plot = true; 
+            otherwise
+                disp('Invalid key pressed. Use Left/Right arrows, Up/Down arrows, "s" to toggle 2D modes, "l" for linear mode, or ENTER to exit.');
+        end
+        
+        if strcmp(currKey, 'return'), break; end 
+
+        currentCluIdx = max(1, min(currentCluIdx, maxClu));
+        
+        fprintf('DEBUG: End of inner loop iteration. currentCluIdx=%d, reprocess_and_plot=%d, mode=%s\n', ...
+            currentCluIdx, reprocess_and_plot, mode);
+
+    end % End of inner while loop
+    
+    if strcmp(currKey, 'return'), break; end 
+    
+    fprintf('DEBUG: Inner loop exited. Next currentCluIdx for outer loop: %d\n', currentCluIdx);
+
+end % End of main while loop
+
+% --- Cleanup ---
+%close(fig_handle); 
+disp('Finished processing all clusters or exited.');
