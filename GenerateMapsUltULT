@@ -1,0 +1,1938 @@
+%% generate maps
+
+
+
+% when you run this it will start to walkthrough the trials and try and
+% segemnt the inbound and outbound sections from the trajectories as being
+% defined by points where the rat crosses certain maze sections in the
+% master data structure - however sometimes this is imperfect so this tool
+% allows you to check each trial and also make corrections!!
+%
+%when you first execute the code you will see a nice plot of the rats
+%trajectory for the labeled trial #
+% the part of the trajectory that will be designated as outbound is labeled
+% in cyan and the inbound segment is in red.
+%- hit the down arrow to scroll to the next trial
+%- at any point you can go backwards by using the up arrow (neat!!!)
+%but here is the super cool part!! - as you walkthrough the trials
+%checking things you will see a bad part on trial #4 - basically because he
+%started to go outbound on a different arm there is extraneous delay area
+%trajectory being marked that we want to get rid of... so because we want
+%to modify the markers we it the SPACEBAR - doing this gives you the
+%impolytool - now draw a region that encloses the extraneous blue part -
+%once you have finished the polygon you made (close the shape) - doubeclick
+%inside the polygon you created - the program will then cut out any marked
+%trajectory inside the polygon! notice now you can scroll on to the next
+%trial and if you go back the trial you modified will still have the
+%corrected markers! then one you get through all the trials the new inbound
+%and outbound markers will be used to make Track.inbound and Track.outbound
+%markers for the master data structure.
+% then if you want to just browse through the completed stuff you can just
+% run walkthroughIOmarkers :)
+
+clear all
+load rec01_BehavElectrDataLFP
+load rec01B.mat
+
+%%
+
+% make the trial master list for trial type sorting
+numTrials = length(behEvents.trialDescr(:,1)) -2;
+
+counter = 1;
+trialArm = [];
+for j = 2:length(behEvents.trialDescr(:,1))-1;
+    
+    armID = [];
+    armID(:,1) = behEvents.beam(behEvents.beam(:,1)<behEvents.trialDescr(j+1,1) & behEvents.beam(:,1)>behEvents.trialDescr(j,1),2);
+    
+    if find(armID == 2)
+        trialArm(counter,1) = 1;
+        counter = counter+1;
+    elseif find(armID == 4)
+        trialArm(counter,1) = 2;
+        counter = counter+1;
+    elseif find(armID == 6)
+        trialArm(counter,1) = 3;
+        counter = counter+1;
+    end
+    
+    
+end
+
+trialMaster(:,1) = trialArm;
+trialMaster(:,2) = behEvents.trialDescr(3:end,4);
+errorTrialsList = find(trialMaster(:,2) ==0);
+
+% Get all trials sorted by where the rat went after the wheel run
+
+leftArmsFuture = find(trialMaster(:,1) == 1);
+centerArmsFuture = find(trialMaster(:,1) == 2);
+rightArmsFuture =  find(trialMaster(:,1) == 3);
+
+% sort each trial by all possible past options to get all 6 combinations of past to future which are: centerLeftTr,rightLeftTr, leftCenterTr, rightCenterTr, leftRightTr, centerRightTr .
+leftLeftTr = [];
+centerCenterTr = [];
+rightRightTr = [];
+leftCenterTr = [];
+rightCenterTr = [];
+
+for j = 1: length(leftArmsFuture)
+    if leftArmsFuture(j) ~= 1;
+        if trialMaster(leftArmsFuture(j)-1) == 2
+            centerLeftTr(j,1) = 1;
+            rightLeftTr(j,1) = 0;
+        elseif trialMaster(leftArmsFuture(j)-1) == 1
+            leftLeftTr(j,1) = 1;
+        else
+            centerLeftTr(j,1) = 0;
+            rightLeftTr(j,1) = 1;
+        end
+    end
+end
+
+for j = 1: length(centerArmsFuture)
+    if centerArmsFuture(j) ~= 1;
+        if trialMaster(centerArmsFuture(j)-1) == 1
+            leftCenterTr(j,1) = 1;
+            rightCenterTr(j,1) = 0;
+        elseif trialMaster(centerArmsFuture(j)-1) == 2
+            centerCenterTr(j,1) = 1;
+        else
+            leftCenterTr(j,1) = 0;
+            rightCenterTr(j,1) = 1;
+        end
+    end
+end
+
+for j = 1: length(rightArmsFuture)
+    if rightArmsFuture(j) ~= 1;
+        if trialMaster(rightArmsFuture(j)-1) == 2
+            leftRightTr(j,1) = 0;
+            centerRightTr(j,1) = 1;
+        elseif trialMaster(rightArmsFuture(j)-1) == 3
+            rightRightTr(j,1) = 1;
+        else
+            leftRightTr(j,1) = 1;
+            centerRightTr(j,1) = 0;
+        end
+    end
+end
+
+
+UpCrossingsCL = leftArmsFuture(find(centerLeftTr));
+UpCrossingsRL = leftArmsFuture(find(rightLeftTr));
+UpCrossingsLL = leftArmsFuture(find(leftLeftTr));
+UpCrossingsLC = centerArmsFuture(find(leftCenterTr));
+UpCrossingsRC = centerArmsFuture(find(rightCenterTr));
+UpCrossingsCC = centerArmsFuture(find(centerCenterTr));
+UpCrossingsLR = rightArmsFuture(find(leftRightTr));
+UpCrossingsCR = rightArmsFuture(find(centerRightTr));
+UpCrossingsRR = rightArmsFuture(find(rightRightTr));
+
+%%
+
+ clearvars -except behEvents Clu Spike Track Laps trialMaster UpCrossings* xml
+ 
+ save('rec01_BehavElectrDataLFP.mat');
+
+
+
+%%
+
+clear all
+load('rec01_BehavElectrDataLFP.mat')
+%%
+figure;
+fig = gcf;
+ax = axes('Parent', fig);
+max_k = size(Laps.lapID,1);
+
+if ~exist('markersdone','var')
+    markersdone = zeros(max_k,1);
+end
+clear inbound outbound
+loopnum = 1;
+while loopnum <= max_k
+    
+    testholdx = Track.xPix(Laps.startLfpInd(loopnum):Laps.endLfpInd(loopnum));
+    testholdy = Track.yPix(Laps.startLfpInd(loopnum):Laps.endLfpInd(loopnum));
+    mazesect = Track.mazeSect(Laps.startLfpInd(loopnum):Laps.endLfpInd(loopnum));
+    
+    if markersdone(loopnum) == 0;
+        
+        %     testholdx = Track.xPix(Laps.startLfpInd(loopnum):Laps.endLfpInd(loopnum));
+        %     testholdy = Track.yPix(Laps.startLfpInd(loopnum):Laps.endLfpInd(loopnum));
+        %     mazesect = Track.mazeSect(Laps.startLfpInd(loopnum):Laps.endLfpInd(loopnum));
+        
+        if Laps.dirChoice(loopnum) == 1
+            arm = 4;
+            port = 7;
+        elseif Laps.dirChoice(loopnum) == 2
+            arm = 5;
+            port = 8;
+        elseif Laps.dirChoice(loopnum) == 3
+            arm = 6;
+            port = 9;
+        end
+        
+        
+        
+        endout = min(find(mazesect ==port ));
+        
+        if Laps.dirChoice(loopnum) == 3
+            startout = max(find(mazesect(1:endout) > 9 | mazesect(1:endout) < 2 ));
+        else
+            startout = min(find(mazesect(1:endout) > 9 ));
+        end
+        
+        
+        startin = max(find(mazesect ==port ));
+        endout = min(find(mazesect ==port ));
+        
+        
+        if Laps.dirChoice(loopnum) == 3
+            endintrans = min(find(mazesect(startin:end) > 9 | mazesect(startin:end) < 2 ));
+        else
+            endintrans = max(find(mazesect(startin:end) > 9));
+        end
+        
+        
+        endin = endintrans + startin;
+        
+        %temp fix for stinky20150807
+        if isempty(startout)
+            startout = 12596;
+        end
+
+        
+        outbound(loopnum,1) = startout;
+        outbound(loopnum,2) = endout;
+        inbound(loopnum,1) = startin;
+        inbound(loopnum,2) = endin;
+        
+    else
+        startout = outbound(loopnum,1);
+        endout = outbound(loopnum,2);
+        startin = inbound(loopnum,1);
+        endin = inbound(loopnum,2);
+        
+        
+    end
+    
+    
+    plot(Track.xPix(1:500:end),Track.yPix(1:500:end),'Color',[0.5 0.5 0.5])
+    hold on;
+    plot(testholdx,testholdy,'k');
+    hold on;
+    plot(testholdx(startout:endout),testholdy(startout:endout),'c','LineWidth',3)
+    hold on
+    plot(testholdx(startin:endin),testholdy(startin:endin),'r','LineWidth',3)
+    hold(ax, 'on');
+    title(ax, ['trial # ',num2str(loopnum),'']);
+    axis ij
+    hold(ax, 'off');
+    axis equal
+
+    %  plot3(testholdx,testholdy,1:length(testholdy),'k');
+    % hold on;
+    % plot3(testholdx(startout:endout),testholdy(startout:endout),startout:endout,'c','LineWidth',3)
+    % hold on
+    % plot3(testholdx(startin:endin),testholdy(startin:endin),startin:endin,'r','LineWidth',3)
+    % hold(ax, 'on');
+    % title(ax, ['trial # ',num2str(loopnum),'']);
+    % axis ij
+    % hold(ax, 'off');
+    %  % axis equal
+    %  daspect([1 1 80])
+    
+    was_a_key = waitforbuttonpress;
+    
+    if was_a_key && strcmp(get(fig, 'CurrentKey'), 'space')
+        
+        inx = [];iny = [];outx = [];outy = [];
+        
+        outx = testholdx(startout:endout);
+        outy = testholdy(startout:endout);
+        
+        inx = testholdx(startin:endin);
+        iny = testholdy(startin:endin);
+        
+        cutzone = impoly;
+        wait(cutzone)
+        polypositions = getPosition(cutzone);
+        outboundcut = inpolygon(outx,outy,polypositions(:,1),polypositions(:,2));
+        inboundcut = inpolygon(inx,iny,polypositions(:,1),polypositions(:,2));
+        
+        if length(find(outboundcut)) > 0
+            
+            startoutclip = max(find(outboundcut));
+            startout = startout + startoutclip;
+            clf
+        end
+        
+        if length(find(inboundcut)) > 0
+            
+            endinclip = length(find(inboundcut));
+            endin = endin - endinclip;
+            clf
+        end
+        
+        outbound(loopnum,1) = startout;
+        outbound(loopnum,2) = endout;
+        inbound(loopnum,1) = startin;
+        inbound(loopnum,2) = endin;
+        
+        gcf;
+        plot(Track.xPix(1:500:end),Track.yPix(1:500:end),'Color',[0.5 0.5 0.5])
+        hold on
+        plot(testholdx,testholdy,'k');
+        hold on
+        plot(testholdx(startout:endout),testholdy(startout:endout),'c','LineWidth',3)
+        hold on
+        plot(testholdx(startin:endin),testholdy(startin:endin),'r','LineWidth',3)
+        axis ij
+        fig = gcf;
+        ax = axes('Parent', fig);
+        hold(ax, 'on');
+        hold(ax, 'off');
+        markersdone(loopnum) = 1;
+        
+        
+    else if was_a_key && strcmp(get(fig, 'CurrentKey'), 'uparrow')
+            loopnum = max(1, loopnum - 1);
+        else
+            markersdone(loopnum) = 1;
+            loopnum = loopnum + 1;
+            
+        end
+    end
+    
+end
+
+
+%%
+for loopnum = 1:size(Laps.lapID,1)
+    inbound(loopnum,1) = inbound(loopnum,1) + Laps.startLfpInd(loopnum);
+    inbound(loopnum,2) = inbound(loopnum,2) + Laps.startLfpInd(loopnum);
+    
+    outbound(loopnum,1) = outbound(loopnum,1) + Laps.startLfpInd(loopnum);
+    outbound(loopnum,2) = outbound(loopnum,2) + Laps.startLfpInd(loopnum);
+    
+end
+
+
+Track.inbound = zeros(size(Track.xPix,1),1);
+Track.outbound = zeros(size(Track.xPix,1),1);
+
+for loopnum = 1:size(Laps.lapID,1);
+    Track.inbound(inbound(loopnum,1):inbound(loopnum,2)) = 1;
+    Track.outbound(outbound(loopnum,1):outbound(loopnum,2)) = 1;
+end
+
+
+% make spike.inbound and outbound structures
+Spike.inbound = zeros(size(Spike.res,1),1);
+Spike.outbound = zeros(size(Spike.res,1),1);
+
+for j = 1:size(Spike.res,1)
+    
+    if Track.inbound(Spike.res(j)) == 1;
+        Spike.inbound(j) =1;
+    else
+        Spike.inbound(j) = 0;
+    end
+    
+     if Track.outbound(Spike.res(j)) == 1;
+        Spike.outbound(j) =1;
+    else
+        Spike.outbound(j) = 0;
+     end
+end
+
+
+
+%%
+clearvars -except behEvents Clu Spike Track Laps trialMaster UpCrossings* xml
+
+save('rec01_BehavElectrDataLFP.mat')
+
+
+
+%% to make the linear track lines on the inbound and outbound limited trajectories.
+if ~isfield(Track, 'linLinesLeftArm')
+    %%
+    xTrIO = Track.xPix(Track.xPix > 0 & Track.yPix > 0 & Track.inbound ==1 |Track.outbound ==1);
+    yTrIO = Track.yPix(Track.xPix > 0 & Track.yPix > 0 & Track.inbound ==1 |Track.outbound ==1);
+    
+    figure;
+    
+    plot(xTrIO,yTrIO,'.')
+    axis ij
+    hold on
+    title('left arm line');
+    la = impoly;
+    leftarm = getPosition(la);
+    hold on
+    leftx2 = interp(leftarm(:,1),50);
+    lefty2 = interp(leftarm(:,2),50);
+    plot(leftx2,lefty2,'LineWidth',2,'color','r')
+    title('right arm line');
+    ra = impoly;
+    rightarm = getPosition(ra);
+    hold on
+    rightx2 = interp(rightarm(:,1),50);
+    righty2 = interp(rightarm(:,2),50);
+    plot(rightx2,righty2,'LineWidth',2,'color','c')
+    title('center arm line');
+    ca = impoly;
+    centerarm = getPosition(ca);
+    hold on
+    centerx2 = interp(centerarm(:,1),50);
+    centery2 = interp(centerarm(:,2),50);
+    plot(centerx2,centery2,'LineWidth',2,'color','g')
+    
+    title('make end cutoff line')
+    cutoff = imline;
+    wait(cutoff);
+    cutoffpos = round(mean(getPosition(cutoff)));
+    cutoffval = cutoffpos(1);
+    
+    leftx2 = leftx2(leftx2<cutoffval);
+    lefty2 = lefty2(leftx2<cutoffval);
+    
+    centerx2 = centerx2(centerx2<cutoffval);
+    centery2 = centery2(centerx2<cutoffval);
+    
+    rightx2 = rightx2(rightx2<cutoffval);
+    righty2 = righty2(rightx2<cutoffval);
+    
+    
+    [pt] = interparc(500,leftx2,lefty2);
+    [ct] = interparc(500,centerx2,centery2);
+    [rt] = interparc(500,rightx2,righty2);
+    
+    clf;
+    
+    plot(xTrIO,yTrIO,'.')
+    axis ij
+    hold on
+    plot(rt(:,1),rt(:,2),'LineWidth',2,'color','c')
+    hold on;
+    plot(ct(:,1),ct(:,2),'LineWidth',2,'color','g')
+    hold on;
+    plot(pt(:,1),pt(:,2),'LineWidth',2,'color','r')
+    
+    title('bound lines for snapping to linearized arms above this line is left')
+    cutoff = imline;
+    wait(cutoff);
+    cutoffpos = round(mean(getPosition(cutoff)));
+    aboveisLEFT = cutoffpos(2);
+    delete(cutoff)
+    title('bound lines for snapping to linearized arms above this line is cent')
+    cutoff2 = imline;
+    wait(cutoff2);
+    cutoffpos2 = round(mean(getPosition(cutoff2)));
+    aboveisCENT = cutoffpos2(2);
+    
+    
+    
+    
+    Track.linLinesLeftArm = pt;
+    Track.linLinesCenterArm = ct;
+    Track.linLinesRightArm = rt;
+    
+end
+%
+if ~isfield(Track,'xPixProj')
+    
+    Track.xPixProj = Track.xPix;
+    Track.yPixProj = Track.yPix;
+    
+    pt = Track.linLinesLeftArm;
+    ct = Track.linLinesCenterArm;
+    rt = Track.linLinesRightArm;
+    
+    for loopnum = 1:length(Laps.lapID)
+        bigSegmentX = [];
+        bigSegmentY = [];
+        % get full trial x & y tracking values
+        bigSegmentX = Track.xPix(Laps.startLfpInd(loopnum):Laps.endLfpInd(loopnum));
+        bigSegmentY = Track.yPix(Laps.startLfpInd(loopnum):Laps.endLfpInd(loopnum));
+        
+        % get markers for inbound and outbound segments
+        bigSegmentwImarker = Track.inbound(Laps.startLfpInd(loopnum):Laps.endLfpInd(loopnum));
+        bigSegmentwOmarker = Track.outbound(Laps.startLfpInd(loopnum):Laps.endLfpInd(loopnum));
+        
+%         if loopnum == 35 
+%             bigSegmentwImarker(1) = 0;
+%         end
+%         
+%          if loopnum == 39 
+%             bigSegmentwImarker(1) = 0;
+%         end
+        bigSegmentwImarker(1) = 0;
+        
+        % get indices for inbound and outbound to use for inserting back in
+        startSubSegindexOut = find(bigSegmentwOmarker ==1,1,'first');
+        endSubSegindexOut = find(bigSegmentwOmarker ==1,1,'last');
+        
+        startSubSegindexIn = find(bigSegmentwImarker ==1,1,'first');
+        endSubSegindexIn = find(bigSegmentwImarker ==1,1,'last');
+        
+     
+        
+        
+        %figure out which linearized line to snap on to
+        armYvalcheck = mean(bigSegmentY(bigSegmentX>200 & bigSegmentX<500));
+        
+        if armYvalcheck < aboveisLEFT
+            linearLine = 'pt';
+            snapyVal = 25;
+        elseif armYvalcheck >aboveisLEFT && armYvalcheck <aboveisCENT
+            linearLine = 'ct';
+            snapyVal = 150;
+        elseif  armYvalcheck > aboveisCENT 
+            linearLine = 'rt';
+            snapyVal = 250;
+        end
+        
+        %%
+        for inout = [1 2]
+            subSeg2snapX = [];
+            subSeg2snapY = [];
+            
+            if inout ==1
+                subSeg2snapX = bigSegmentX(bigSegmentwOmarker ==1);
+                subSeg2snapY=  bigSegmentY(bigSegmentwOmarker ==1);
+            else
+                subSeg2snapX = bigSegmentX(bigSegmentwImarker ==1);
+                subSeg2snapY=  bigSegmentY(bigSegmentwImarker ==1);
+            end
+            
+            
+            %         tic
+            %         [~,xref] = min(...
+            %             (bsxfun(@plus, subSeg2snapX', -pt(:,1)).^2 +...
+            %             bsxfun(@plus, subSeg2snapY', -pt(:,2)).^2)...
+            %             );
+            
+            eval(sprintf('[~,xref] = min((bsxfun(@plus, subSeg2snapX'', -%s(:,1)).^2 + bsxfun(@plus, subSeg2snapY'', -%s(:,2)).^2));',linearLine,linearLine))
+            %         toc
+            
+            if inout ==1
+                bigSegmentX(startSubSegindexOut:endSubSegindexOut) = xref;
+                bigSegmentY(startSubSegindexOut:endSubSegindexOut) = snapyVal;
+            else
+                bigSegmentX(startSubSegindexIn:endSubSegindexIn) = xref;
+                bigSegmentY(startSubSegindexIn:endSubSegindexIn) = snapyVal;
+            end
+            
+        end
+        
+        Track.xPixProj(Laps.startLfpInd(loopnum):Laps.endLfpInd(loopnum)) = bigSegmentX;
+        Track.yPixProj(Laps.startLfpInd(loopnum):Laps.endLfpInd(loopnum)) = bigSegmentY;
+        
+    end
+    
+    
+    Spike.xPixProj = Spike.xPix;
+    Spike.yPixProj = Spike.yPix;
+    
+    
+    for i = 1:length(Spike.res)
+        Spike.xPixProj(i) = Track.xPixProj(Spike.res(i));
+        Spike.yPixProj(i) = Track.yPixProj(Spike.res(i));
+    end
+    
+   
+    clearvars -except behEvents Clu Spike Track Laps trialMaster UpCrossings* xml
+    save('rec01_BehavElectrDataLFP.mat')
+    
+else
+    
+end
+
+
+%% make six maps
+
+load('rec01_BehavElectrDataLFP.mat')
+
+
+%%
+testBin = [10];
+testsmoothval = [60];
+testspeedthresh = [50];
+horizonly = 1;
+clulist = [1:max(Spike.totclu)];
+
+tic
+%for IDclu = 126;
+for IDclu = clulist;
+    disp([num2str(IDclu) ' out of ' num2str(length(Clu.totClu))])
+    
+    normSmoothedFR = [];
+    smFR = [];
+    xTr = [];
+    yTr = [];
+    xSp = [];
+    ySp = [];
+    sp = [];
+    
+    for inboundoutbound = [1 2]
+        
+        smoothVAL = testsmoothval;%270;%220; %50; %30
+        divXY = testBin;%;20;%5;
+        
+        minSpeed = testspeedthresh;   % mm/sec
+        
+        if inboundoutbound == 1;
+%             xTr = Track.xPixProj(Track.xPixProj > 0 & Track.yPixProj > 0 & Track.speed_MMsec > minSpeed & Track.inbound == 1);% & Track.lapID >40 );% & ~mask);
+%             yTr = Track.yPixProj(Track.xPixProj > 0 & Track.yPixProj > 0  & Track.speed_MMsec > minSpeed & Track.inbound == 1);% & Track.lapID >40);% & ~mask);
+%             sp = find(Spike.totclu == IDclu & Spike.xPixProj>0 & Spike.yPixProj>0 & Spike.speed_MMsec > minSpeed & ismember(Spike.res,find(Track.inbound)));% & Spike.res > tLim(1) & Spike.res < tLim(end));
+           
+%             xTr = Track.xPixProj(Track.xPixProj > 0 & Track.yPixProj > 0 & Track.speed_MMsec > minSpeed & Track.inbound == 1 );% & Track.lapID >40 );% & ~mask);
+%             yTr = Track.yPixProj(Track.xPixProj > 0 & Track.yPixProj > 0  & Track.speed_MMsec > minSpeed & Track.inbound == 1 );% & Track.lapID >40);% & ~mask);
+%             sp = find(Spike.totclu == IDclu & Spike.xPixProj>0 & Spike.yPixProj>0 & Spike.speed_MMsec > minSpeed & ismember(Spike.res,find(Track.inbound))); % & Spike.res<1931424);
+%             % sp = find(Spike.totclu == IDclu & Spike.xPixProj>0 & Spike.yPixProj>0 & Spike.speed_MMsec > minSpeed & ismember(Spike.res,find(Track.inbound)) & ismember(Spike.res,find(ismember(Track.lapID,UpCrossingsLC)))); % & Spike.res<1931424);
+                                                                                                                                                                         %lap50start = 2181748
+             
+%             xTr = Track.xPixProj(Track.xPixProj > 0 & Track.yPixProj > 0 & Track.speed_MMsec > minSpeed & Track.inbound == 1 & Track.lapID>20);% & Track.lapID >40 );% & ~mask);
+%             yTr = Track.yPixProj(Track.xPixProj > 0 & Track.yPixProj > 0  & Track.speed_MMsec > minSpeed & Track.inbound == 1 & Track.lapID>20 );% & Track.lapID >40);% & ~mask);
+%             sp = find(Spike.totclu == IDclu & Spike.xPixProj>0 & Spike.yPixProj>0 & Spike.speed_MMsec > minSpeed & ismember(Spike.res,find(Track.inbound))  & Spike.trial>20); % & Spike.res<1931424);
+%                                                                                                                                                                     
+                
+     xTr = Track.xPixProj(Track.xPixProj > 0 & Track.yPixProj > 0 & Track.speed_MMsec > minSpeed & Track.inbound == 1 );% & Track.lapID >40 );% & ~mask);
+            yTr = Track.yPixProj(Track.xPixProj > 0 & Track.yPixProj > 0  & Track.speed_MMsec > minSpeed & Track.inbound ==  1);% & Track.lapID >40);% & ~mask);
+            sp = find(Spike.totclu == IDclu & Spike.xPixProj>0 & Spike.yPixProj>0 & Spike.speed_MMsec > minSpeed & ismember(Spike.res,find(Track.inbound))  ); % & Spike.res<1931424);
+                
+                                                                                                                                                                         %lap50end = 2232957
+        else
+%             xTr = Track.xPixProj(Track.xPixProj > 0 & Track.yPixProj > 0 & Track.speed_MMsec > minSpeed & Track.outbound == 1 );% & Track.lapID >40 );% & ~mask);
+%             yTr = Track.yPixProj(Track.xPixProj > 0 & Track.yPixProj > 0 & Track.speed_MMsec > minSpeed & Track.outbound == 1 );% & Track.lapID >40);% & ~mask);
+%             sp = find(Spike.totclu == IDclu & Spike.xPixProj>0 & Spike.yPixProj>0 & Spike.speed_MMsec > minSpeed & ismember(Spike.res,find(Track.outbound))); % & Spike.res<1931424);
+%             %sp = find(Spike.totclu == IDclu & Spike.xPixProj>0 & Spike.yPixProj>0 & Spike.speed_MMsec > minSpeed & ismember(Spike.res,find(Track.outbound)) & ismember(Spike.res,find(ismember(Track.lapID,UpCrossingsLC)))); % & Spike.res< 1931424);% & Spike.res > tLim(1) & Spike.res < tLim(end));
+            
+            
+%              xTr = Track.xPixProj(Track.xPixProj > 0 & Track.yPixProj > 0 & Track.speed_MMsec > minSpeed & Track.outbound == 1 & Track.lapID>20 );% & Track.lapID >40 );% & ~mask);
+%             yTr = Track.yPixProj(Track.xPixProj > 0 & Track.yPixProj > 0 & Track.speed_MMsec > minSpeed & Track.outbound == 1 & Track.lapID>20 );% & Track.lapID >40);% & ~mask);
+%             sp = find(Spike.totclu == IDclu & Spike.xPixProj>0 & Spike.yPixProj>0 & Spike.speed_MMsec > minSpeed & ismember(Spike.res,find(Track.outbound)) & Spike.trial>20); % & Spike.res<1931424);
+%            
+        xTr = Track.xPixProj(Track.xPixProj > 0 & Track.yPixProj > 0 & Track.speed_MMsec > minSpeed & Track.outbound == 1  );% & Track.lapID >40 );% & ~mask);
+            yTr = Track.yPixProj(Track.xPixProj > 0 & Track.yPixProj > 0 & Track.speed_MMsec > minSpeed & Track.outbound == 1 );% & Track.lapID >40);% & ~mask);
+            sp = find(Spike.totclu == IDclu & Spike.xPixProj>0 & Spike.yPixProj>0 & Spike.speed_MMsec > minSpeed & ismember(Spike.res,find(Track.outbound)) ); % & Spike.res<1931424);
+           
+            
+            
+        end
+        
+        xSpAll = Spike.xPixProj(sp);
+        ySpAll = Spike.yPixProj(sp);
+        
+        
+        xSp = xSpAll(xSpAll > 1);
+        ySp = ySpAll(xSpAll > 1);
+        
+        meanFR = round((length(xSp) / (length(xTr)/1250)) * 10) / 10;             % n spikes/sec
+        
+        % bin coordinates
+        binnedSpikes = full(sparse(round(xSp/divXY)+1,round(ySp/divXY)+1,1,round(max(xTr)/divXY+2),round(max(yTr)/divXY+2) ));
+        binnedTime = full(sparse(round(xTr/divXY)+1,round(yTr/divXY)+1,1/xml.lfpSampleRate,round(max(xTr)/divXY+2),round(max(yTr)/divXY+2)));
+        binnedFR = binnedSpikes ./ binnedTime;
+        binnedFR(1:floor(min(xTr)/divXY)-1,:) = [];
+        binnedFR(:,1:floor(min(yTr)/divXY)-1) = [];
+        binP = binnedTime ./ (sum(sum(binnedTime)));
+        
+        binnedFR(isnan(binnedFR))=0; binnedFR(isinf(binnedFR))=0;
+        M = max([round(max(xSp)/divXY+1) round(max(ySp)/divXY+1)]);
+        
+        smFR = SmoothPix(binnedFR,[ 0 smoothVAL./M ]); %horiz smooth only
+        
+        
+        normSmoothedFR = smFR ./ sum(smFR(:));
+        
+        
+        
+        [~, arms,~] = find(mean(binnedTime));
+        %[~, arms,~] = find(mean(binnedFR));
+        
+        if inboundoutbound== 1
+            
+            sixfieldmaps(IDclu,1,:) =  smFR(:,arms(1)-1); %left arm inbound
+            sixfieldmaps(IDclu,3,:) =  smFR(:,arms(2)-1); %center arm inbound
+             sixfieldmaps(IDclu,5,:) =  smFR(:,arms(3)-1); %right arm inbound
+
+%              sixfieldmaps(IDclu,1,:) =  smFR(:,arms(1)-1); %left arm inbound
+%             sixfieldmaps(IDclu,3,:) =  smFR(:,arms(2)-1); %center arm inbound
+%              sixfieldmaps(IDclu,5,:) =  smFR(:,arms(4)-1); %right arm inbound
+%              %ugly hot fix for TT 12/02 inbound
+             
+%              sixfieldmaps(IDclu,1,:) =  smFR(:,3); %left arm inbound
+%             sixfieldmaps(IDclu,3,:) =  smFR(:,15); %center arm inbound
+%              sixfieldmaps(IDclu,5,:) =  smFR(:,25); %right arm inbound
+             %needed for Ned 10/14
+             
+             
+%              sixfieldmaps(IDclu,1,:) =  smFR(:,arms(1)-1); %left arm inbound
+%             sixfieldmaps(IDclu,3,:) =  smFR(:,arms(1)-1); %center arm inbound
+%              sixfieldmaps(IDclu,5,:) =  smFR(:,arms(2)-1); %right arm inbound
+%              %needed for ArtieTEst
+
+
+%                 sixfieldmaps(IDclu,1,:) =  smFR(:,arms(1)); %left arm inbound
+%             sixfieldmaps(IDclu,3,:) =  smFR(:,arms(1)); %center arm inbound
+%              sixfieldmaps(IDclu,5,:) =  smFR(:,arms(2)); %right arm inbound
+             %needed for ArtieTEst
+        else
+            
+             
+            sixfieldmaps(IDclu,2,:) =  smFR(:,arms(1)-1); %left arm outbound
+            sixfieldmaps(IDclu,4,:) =  smFR(:,arms(2)-1); %center arm outbound
+             sixfieldmaps(IDclu,6,:) =  smFR(:,arms(3)-1); %right arm outbound
+%              
+%               sixfieldmaps(IDclu,2,:) =  smFR(:,3); %left arm outbound
+%             sixfieldmaps(IDclu,4,:) =  smFR(:,15); %center arm outbound
+%              sixfieldmaps(IDclu,6,:) =  smFR(:,25); %right arm outbound
+             %needed for Ned 10/14
+             
+           %sixfieldmaps(IDclu,6,:) =  smFR(:,25); %right arm outbound
+           
+%             sixfieldmaps(IDclu,2,:) =  smFR(:,arms(1)-1); %left arm outbound
+%             sixfieldmaps(IDclu,4,:) =  smFR(:,arms(1)-1); %center arm outbound
+%             sixfieldmaps(IDclu,6,:) =  smFR(:,arms(2)-1); %right arm outbound
+%             %needed for ArtieTEst
+% 
+%             sixfieldmaps(IDclu,2,:) =  smFR(:,arms(1)); %left arm outbound
+%             sixfieldmaps(IDclu,4,:) =  smFR(:,arms(1)); %center arm outbound
+%             sixfieldmaps(IDclu,6,:) =  smFR(:,arms(2)); %right arm outbound
+            %needed for ArtieTEst
+           
+        end
+    end
+    
+end
+
+
+clearvars -except binnedFR sixfieldmaps smoothVAL divXY minSpeed
+
+ save(sprintf('sixmaps_SM_%02d_bin_%02d_spd_%02d.mat',smoothVAL,divXY,minSpeed));
+
+
+
+toc
+
+%%
+
+
+
+%% make 2d map
+load('rec01_BehavElectrDataLFP.mat')
+
+
+
+
+tic
+
+for IDclu = 1:max(Spike.totclu);
+    
+    normSmoothedFR = [];
+    smFR = [];
+    disp([num2str(IDclu) ' out of ' num2str(length(Clu.totClu))])
+    
+    
+    smoothVAL = 100 ;%270;%220; %50; %30
+    divXY = 06;%;20;%5;
+    
+    minSpeed = 50;   % mm/sec
+    
+    xTr = Track.xPix(Track.xPix > 1 & Track.yPix > 1 & Track.speed_MMsec > minSpeed);% & ~mask);
+    yTr = Track.yPix(Track.xPix > 1 & Track.yPix > 1 & Track.speed_MMsec > minSpeed);% & ~mask);
+    
+    locClu = unique(Spike.clu(Spike.totclu == IDclu));
+    shankN = unique(Spike.shank(Spike.totclu == IDclu));
+    
+    sp = find(Spike.totclu == IDclu & Spike.xMM>0 & Spike.yMM>0 & Spike.speed_MMsec > minSpeed);% & Spike.res > tLim(1) & Spike.res < tLim(end));
+    
+    
+    
+    
+    xSpAll = Spike.xPix(sp);
+    ySpAll = Spike.yPix(sp);
+    xSp = xSpAll(xSpAll > 1);
+    ySp = ySpAll(xSpAll > 1);
+    
+    meanFR = round((length(xSp) / (length(xTr)/1250)) * 10) / 10;             % n spikes/sec
+    
+    % bin coordinates
+    binnedSpikes = full(sparse(round(xSp/divXY)+1,round(ySp/divXY)+1,1,round(max(xTr)/divXY+2),round(max(yTr)/divXY+2)));
+    binnedTime = full(sparse(round(xTr/divXY)+1,round(yTr/divXY)+1,1/xml.lfpSampleRate,round(max(xTr)/divXY+2),round(max(yTr)/divXY+2)));
+    binnedFR = binnedSpikes ./ binnedTime;
+    binnedFR(1:floor(min(xTr)/divXY)-1,:) = [];
+    binnedFR(:,1:floor(min(yTr)/divXY)-1) = [];
+    binP = binnedTime ./ (sum(sum(binnedTime)));
+    
+    binnedFR(isnan(binnedFR))=0; binnedFR(isinf(binnedFR))=0;
+    M = max([round(max(xSp)/divXY+1) round(max(ySp)/divXY+1)]);
+    
+    
+    
+    
+    if smoothVAL == 0;
+        smFR = smooth2a(binnedFR,1,1);
+        
+    else
+        
+%         smFR = SmoothPix(binnedFR,[smoothVAL smoothVAL]);
+         smFR = SmoothPix(binnedFR,[smoothVAL./M smoothVAL./M]);
+    end
+    
+    normSmoothedFR = smFR ./ sum(smFR(:));
+    
+    
+    placefieldmaps(IDclu,:) = smFR(:);
+    
+    
+end
+
+
+toc
+
+
+%%
+
+pfmapflname = sprintf('placefieldmaps_sm%02d_bin%02d_spd%02d.mat',smoothVAL,divXY,minSpeed);
+clearvars -except placefieldmaps binnedFR pfmapflname
+save(pfmapflname);
+
+%%
+
+placefieldmaps3 = reshape(placefieldmaps,size(placefieldmaps,1),size(binnedFR,1),size(binnedFR,2));
+
+figure;
+imagesc(squeeze(mean(placefieldmaps3))')
+mazezone = impoly;
+wait(mazezone)
+polypositions = getPosition(mazezone);
+
+
+%%
+figure;
+imagesc(squeeze(mean(placefieldmaps3))')
+
+colormap(bone)
+hold on;
+plot(polypositions(:,1),polypositions(:,2),'w','LineWidth',2)
+%%
+figure;
+blankfig = ones(size(binnedFR,2),size(binnedFR,1));
+
+imagesc(blankfig)
+colormap(bone)
+hold on;
+plot(polypositions(:,1),polypositions(:,2),'w','LineWidth',2)
+
+%%
+
+clearvars -except binnedFR pfmapflname placefieldmaps polypositions
+save('placefieldmaps_sm50_bin20_spd50')
+
+
+%% SPW event detector
+
+
+clear all
+%%
+load rec01_BehavElectrDataLFP Spike Track Laps Clu
+%%  
+
+% for loopnum = 1:10
+% for loopnum = [67:69];
+for loopnum = 1:length(Laps.lapID);
+    %    tic
+    clearvars -except ripplecounter spwSpikes spwSpikes2 Spike Track Laps Clu trials rpl binnedFR loopnum sliding windowslideratio  masterripplehold masterSPWdetectedmarker rippletimemarkers
+    
+    
+    tbin = 0.020;
+    tbin2 = 0.010;
+    
+    windowslideratio = tbin/tbin2;
+    
+    sliding = 1;
+    trial2lookat = loopnum;
+    
+    
+    
+    wholetrialstart = Laps.startLfpInd(trial2lookat);
+    wholetrialend = Laps.endLfpInd(trial2lookat);
+    
+    
+    
+    wholetrialstartadj2 = floor(wholetrialstart./(1250)*20000);
+    wholetrialendadj2 = floor(wholetrialend./(1250)*20000);
+    
+    
+    
+    %usefortrialasedges
+    startedge = wholetrialstartadj2;
+    endedge = wholetrialendadj2;
+    
+    clunumber = max(Spike.totclu);
+    
+    %forsliding
+    if sliding == 1
+        edges = startedge:tbin2*20000:endedge;
+    else
+        
+        edges = startedge:tbin*20000:endedge;
+    end
+    
+    
+    for k = 1:length(Clu.totClu);
+        spikes = Spike.res20kHz(find(Spike.totclu == k & Spike.res20kHz>startedge & Spike.res20kHz<endedge));
+        
+        if sliding ==1
+            spikesperbin(k,:) = conv(histc(spikes,edges),ones(windowslideratio,1),'same');
+        else
+            spikesperbin(k,:) = histc(spikes,edges);
+        end
+        
+    end
+    
+    spikesperbinwmPFC = spikesperbin;
+    
+    spikesperbin(find(Clu.isIntern(1:length(Clu.shank(Clu.shank<32)))),:) = 0;
+    
+    spikesperbin(find(Clu.shank>32),:) = 0;
+%             spikesperbin(find(Clu.shank<8),:) = 0; %special case for artie
+%              spikesperbin(find(Clu.shank>20),:) = 0;  %special case for artie
+    spikesperbintestlook= [];
+    spikesperbintestlook = sum(spikesperbin);
+    
+    
+    
+    
+    testholdx = Track.xPix(Laps.startLfpInd(loopnum):Laps.endLfpInd(loopnum));
+    testholdy = Track.yPix(Laps.startLfpInd(loopnum):Laps.endLfpInd(loopnum));
+    
+    
+    totalcellsactiveperbin = smooth(sum(spikesperbin));
+    
+    
+    fixedxcor = resample(testholdx,size(totalcellsactiveperbin,1),size(testholdx,1));
+    fixedycor = resample(testholdy,size(totalcellsactiveperbin,1),size(testholdy,1));
+    mazesect = Track.mazeSect(Laps.startLfpInd(loopnum):Laps.endLfpInd(loopnum));
+    maxformazsectfix = max(mazesect);
+    speedlook= Track.speed_MMsec(Laps.startLfpInd(loopnum):Laps.endLfpInd(loopnum));
+    mazesect = mazesect./max(mazesect)*80;
+    speedlook = smooth((speedlook./max(speedlook))*80);
+    
+    mazesectfix = resample(mazesect,size(totalcellsactiveperbin,1),size(mazesect,1));
+    speedlookfix = resample(speedlook,size(totalcellsactiveperbin,1),size(speedlook,1));
+    
+    wheelspeedlook= Laps.WhlSpeedCW(Laps.startLfpInd(loopnum):Laps.endLfpInd(loopnum));
+    wheelspeedlook = smooth((wheelspeedlook./max(wheelspeedlook))*80);
+    wheelspeedlookfix = resample(wheelspeedlook,size(totalcellsactiveperbin,1),size(wheelspeedlook,1));
+    
+    mazesectfixfix = round(mazesectfix*maxformazsectfix/80);
+    
+    LIAperiodactivity = totalcellsactiveperbin(find(speedlookfix<50 & (mazesectfixfix ==7 | mazesectfixfix ==8 |mazesectfixfix ==9)));
+ 
+    
+    meanLIA = mean(LIAperiodactivity);
+    stdLIA = std(LIAperiodactivity);
+    
+    % change to 30 for with int 10 w/o
+    [frpks frpksloc pkwidth] = findpeaks(smooth(totalcellsactiveperbin),'MinPeakProminence',meanLIA+(stdLIA*2),'Annotate','extents','WidthReference','halfheight');
+    inrewardsareapeaks = ismember(frpksloc,find(speedlookfix<3 & (mazesectfixfix ==7 | mazesectfixfix ==8 |mazesectfixfix ==9)));
+    
+    spwrpeakscoord = frpksloc(inrewardsareapeaks);
+    if ~isempty(spwrpeakscoord)
+        signaltotcell = smooth(totalcellsactiveperbin);
+        tinycounter = 1;
+        for f = 1:2:length(spwrpeakscoord)*2;
+            % change to 10 for with int 2 w/o
+            chunkmarker(f) = max(find(signaltotcell(1:spwrpeakscoord(tinycounter)) <meanLIA));
+            chunkmarker(f+1) = min(find(signaltotcell(spwrpeakscoord(tinycounter):end)<meanLIA)) + spwrpeakscoord(tinycounter);
+            tinycounter = tinycounter+1;
+        end
+        
+        %trying to remove extra large spws at the end.. but messed up/was too
+        %stringent.
+        %now is removing chunks with movement in them.
+        for t = 1:2:length(chunkmarker)
+            if length(find(speedlookfix(chunkmarker(t):chunkmarker(t+1)-10)>10)) > 1
+                mark4remove(t) = 0;
+                mark4remove(t+1) = 0;
+            else
+                mark4remove(t) = 1;
+                mark4remove(t+1) = 1;
+            end
+        end
+        
+        chunkmarker = chunkmarker(find(mark4remove));
+        
+        if ~isempty(find(diff(chunkmarker) == 0))
+            repeatindex = find(diff(chunkmarker) == 0);
+            chunkmarker(repeatindex) = 0;
+            chunkmarker(repeatindex+1) = 0;
+        end
+        
+        chunkmarker= chunkmarker(chunkmarker ~= 0);
+        
+        %%    to see the selections trialbytrial
+        % figure;
+        %
+        % set(gcf,'position', [100,700,1200,700])
+        % plot(smooth(totalcellsactiveperbin),'k')
+        %  hold on;
+        %  plot(mazesectfix,'g');
+        %  hold on;
+        %  plot(speedlookfix,'m');
+        %  hold on;
+        %  plot(wheelspeedlookfix,'r')
+        %  hold on
+        %
+        %
+        %  for f = 1:2:length(chunkmarker);
+        %
+        %     line([chunkmarker(f) chunkmarker(f)], [0 90 ] ,'color','b')
+        %
+        %     line([chunkmarker(f+1) chunkmarker(f+1)], [0 90 ] ,'color','b')
+        % end
+        %  xlim([0 length(smooth(totalcellsactiveperbin))])
+        %  title(num2str(loopnum))
+        %  pause
+        %  close
+        %%
+        
+        
+        % clearvars -except masterSPWdetectedmarker
+        % save('detectedSPWMarkers.mat');
+        
+        
+        listofchunks = unique(chunkmarker);
+        
+        ripplecounter = 1;
+        for chunkhold =1:2:length(listofchunks)
+            
+            spwSpikes{loopnum,ripplecounter} =spikesperbin(:,listofchunks(chunkhold):listofchunks(chunkhold+1));
+            spwSpikes2{loopnum,ripplecounter} =spikesperbinwmPFC(:,listofchunks(chunkhold):listofchunks(chunkhold+1));
+            rippletimemarkers{loopnum,ripplecounter} = listofchunks(chunkhold):listofchunks(chunkhold+1);
+            ripplecounter = ripplecounter +1;
+        end
+    else
+    end
+    
+    loopnum
+    % toc
+end
+%
+%%
+clearvars -except spwSpikes spwSpikes2 rippletimemarkers
+save('spwSpikes2.mat');
+
+
+%% three wheel maps
+
+
+
+load rec01_BehavElectrDataLFP
+load rec01B.mat
+
+
+
+%% make the trial master list for trial type sorting
+numTrials = length(behEvents.trialDescr(:,1)) -2;
+
+counter = 1;
+trialArm = [];
+for j = 2:length(behEvents.trialDescr(:,1))-1;
+    
+    armID = [];
+    armID(:,1) = behEvents.beam(behEvents.beam(:,1)<behEvents.trialDescr(j+1,1) & behEvents.beam(:,1)>behEvents.trialDescr(j,1),2);
+    
+    if find(armID == 2)
+        trialArm(counter,1) = 1;
+        counter = counter+1;
+    elseif find(armID == 4)
+        trialArm(counter,1) = 2;
+        counter = counter+1;
+    elseif find(armID == 6)
+        trialArm(counter,1) = 3;
+        counter = counter+1;
+    end
+    
+    
+end
+
+trialMaster(:,1) = trialArm;
+trialMaster(:,2) = behEvents.trialDescr(3:end,4);
+errorTrialsList = find(trialMaster(:,2) ==0);
+
+%% Get all trials sorted by where the rat went after the wheel run
+
+leftArmsFuture = find(trialMaster(:,1) == 1);
+centerArmsFuture = find(trialMaster(:,1) == 2);
+rightArmsFuture =  find(trialMaster(:,1) == 3);
+
+%% sort each trial by all possible past options to get all 6 combinations of past to future which are: centerLeftTr,rightLeftTr, leftCenterTr, rightCenterTr, leftRightTr, centerRightTr .
+leftLeftTr = [];
+centerCenterTr = [];
+rightRightTr = [];
+
+for j = 1: length(leftArmsFuture)
+    if leftArmsFuture(j) ~= 1;
+        if trialMaster(leftArmsFuture(j)-1) == 2
+            centerLeftTr(j,1) = 1;
+            rightLeftTr(j,1) = 0;
+        elseif trialMaster(leftArmsFuture(j)-1) == 1
+            leftLeftTr(j,1) = 1;
+        else
+            centerLeftTr(j,1) = 0;
+            rightLeftTr(j,1) = 1;
+        end
+    end
+end
+
+for j = 1: length(centerArmsFuture)
+    if centerArmsFuture(j) ~= 1;
+        if trialMaster(centerArmsFuture(j)-1) == 1
+            leftCenterTr(j,1) = 1;
+            rightCenterTr(j,1) = 0;
+        elseif trialMaster(centerArmsFuture(j)-1) == 2
+            centerCenterTr(j,1) = 1;
+        else
+            leftCenterTr(j,1) = 0;
+            rightCenterTr(j,1) = 1;
+        end
+    end
+end
+
+for j = 1: length(rightArmsFuture)
+    if rightArmsFuture(j) ~= 1;
+        if trialMaster(rightArmsFuture(j)-1) == 2
+            leftRightTr(j,1) = 0;
+            centerRightTr(j,1) = 1;
+        elseif trialMaster(rightArmsFuture(j)-1) == 3
+            rightRightTr(j,1) = 1;
+        else
+            leftRightTr(j,1) = 1;
+            centerRightTr(j,1) = 0;
+        end
+    end
+end
+
+
+UpCrossingsCL = leftArmsFuture(find(centerLeftTr));
+UpCrossingsRL = leftArmsFuture(find(rightLeftTr));
+UpCrossingsLL = leftArmsFuture(find(leftLeftTr));
+UpCrossingsLC = centerArmsFuture(find(leftCenterTr));
+UpCrossingsRC = centerArmsFuture(find(rightCenterTr));
+UpCrossingsCC = centerArmsFuture(find(centerCenterTr));
+UpCrossingsLR = rightArmsFuture(find(leftRightTr));
+UpCrossingsCR = rightArmsFuture(find(centerRightTr));
+UpCrossingsRR = rightArmsFuture(find(rightRightTr));
+
+%%
+
+ filename = 'rec01';
+
+%filename = 'Spot-20160704-02';
+
+filenameparsed = strsplit(filename,'-');
+%%
+% % %% get trial start and ends based on the last wheel run from the maze
+% % % ammo = [];
+% % ammo = [11 15 28 29 51 60];
+% % for k = 1:length(trials);
+% %
+% %     if ismember(k,ammo)
+% %         UpCrossings(k)= trials{1,k}.WhlLfpIndStart1.*(20000/1250);
+% %     else
+% %         UpCrossings(k)= trials{1,k}.lfpIndStart.*(20000/1250);
+% %
+% %     end
+% %
+% % end
+% %
+% % UpCrossings(23) = 1203209*(20000/1250);
+
+%%
+
+for k = 1:length(Laps.lapID);
+    
+    
+    UpCrossings(k) =  Laps.WhlLfpIndStartCW{k}(end).*(20000/1250);
+    
+end
+
+%%
+
+UpCrossingsAll = UpCrossings;
+counter = 1;
+shankIDs = unique(Clu.shank);
+for gl = 1:length(unique(Clu.shank));
+%     gl
+    clear res1
+    clear data3_3_res
+    if length(filenameparsed) == 1
+        name = sprintf([filenameparsed{1} '.res.%d'],shankIDs(gl));
+    else
+        recNUM = str2num(filenameparsed{3});
+        
+        
+        name = sprintf([filenameparsed{1} '-' filenameparsed{2} '-%02d.res.%d'],recNUM, shankIDs(gl));
+    end
+    load(name);
+    
+    [nClusters Clust] = LoadClu_e1(filename,shankIDs(gl));
+    
+    tempNclusters = nClusters
+    
+    numFigs = ceil(tempNclusters);
+    
+    
+    
+    for jj = [2:nClusters];
+%         cluholdercheck{gl,jj} = jj; 
+%         jj
+        
+        UpCrossingsSelect = [];
+        %UpCrossingsSelect = UpCrossings(TrialListHOLDERORDER{typer}');
+        UpCrossingsSelect = UpCrossingsAll';
+        
+        
+        %stimlength = 8; % length of wheel run
+        
+        samplingrate = 20000;
+        prestim = 0; % time before start of wheel run to look at
+        poststim = 8; % time after start of wheel run to look at so N-stimlength = post wheel run completion time
+        totalwindowtime = prestim + poststim;
+        binsizewanted = 125;
+        %binsizestep = 250;
+        
+        %windowslisteration = binsizewanted/binsizestep;
+        %spikesperbin(k,:) = conv(histc(spikes,edges),ones(windowslideratio,1),'same');
+        
+        %postmarker = prestim+stimlength;
+        
+        if length(filenameparsed) == 1
+            eval(['res1 = ' filenameparsed{1} '_res(Clust == jj);'] )
+        else
+            eval(['res1 = ' filenameparsed{1} '_' filenameparsed{2} '_' filenameparsed{3} '_res(Clust == jj);'] )
+            
+        end
+        
+        
+        j = (1000/binsizewanted)*totalwindowtime;
+        holder = [];
+        holder2 = [];
+        
+        
+        for k = 1:length(UpCrossingsSelect)
+            
+            holder =   res1(res1> (UpCrossingsSelect(k) -(prestim*samplingrate)) & res1< (UpCrossingsSelect(k) + (poststim*samplingrate))) ;
+            
+            %holder2(k,:) = histc(holder,(UpCrossingsSelect(k) -(prestim*samplingrate)):(totalwindowtime*samplingrate)/j:(UpCrossingsSelect(k) + (poststim*samplingrate)));
+             holder2(k,:) = conv(histc(holder,(UpCrossingsSelect(k) -(prestim*samplingrate)):(totalwindowtime*samplingrate)/j:(UpCrossingsSelect(k) + (poststim*samplingrate))),ones(5,1),'same');
+            
+            %                         holder2(k,:) = histc(holder,(UpCrossingsSelect(k) -(prestim*samplingrate)):(totalwindowtime*samplingrate)/j:(UpCrossingsSelect(k) + (poststim*samplingrate)));
+            %
+        end
+        
+        histogramer = sum(holder2);
+        binsize = (totalwindowtime/j) *1000;
+        
+        
+        
+   
+      
+        epFieldHolder{counter} = holder2;
+        counter = counter + 1;
+    end
+    
+end
+
+
+%%
+
+for f = 1:length(Laps.lapID)
+    %for j = list2use'
+    for j = 1:length(epFieldHolder)
+        %fieldseq(j,:) = smooth(epFieldHolder{j}(f,:))./max(smooth(epFieldHolder{j}(f,:)));
+        %fieldseq(j,:) = smooth(epFieldHolder{j}(f,:));
+        fieldseq(j,:) = epFieldHolder{j}(f,:);
+    end
+    fieldseq(isnan(fieldseq)) = 0;
+    trialpopsequencesmoothedandnorm(f,:,:) = fieldseq;
+end
+
+rightpast = [UpCrossingsRC; UpCrossingsRL;];
+centerpast = [UpCrossingsCL; UpCrossingsCR;];
+centertoleft = [UpCrossingsCL;];
+centertoright = [UpCrossingsCR;];
+leftpast = [UpCrossingsLC; UpCrossingsLR;];
+%
+% way to make only with correct trials
+% rightpast = rightpast(~ismember(rightpast,errorTrialsList));
+% centerpast = centerpast(~ismember(centerpast,errorTrialsList));
+% leftpast = leftpast(~ismember(leftpast,errorTrialsList));
+%
+
+rightpasttrialsonly = squeeze(trialpopsequencesmoothedandnorm(rightpast,:,:));
+
+rightpasttrialsonly2 = squeeze(mean(rightpasttrialsonly));
+
+
+centerpasttrialsonly = squeeze(trialpopsequencesmoothedandnorm(centerpast,:,:));
+
+centerpasttrialsonly2 = squeeze(mean(centerpasttrialsonly));
+
+
+centertolefttrialsonly = squeeze(trialpopsequencesmoothedandnorm(centertoleft,:,:));
+
+centertolefttrialsonly2 = squeeze(mean(centertolefttrialsonly));
+
+
+centertorighttrialsonly = squeeze(trialpopsequencesmoothedandnorm(centertoright,:,:));
+
+centertorighttrialsonly2 = squeeze(mean(centertorighttrialsonly));
+
+
+leftpasttrialsonly = squeeze(trialpopsequencesmoothedandnorm(leftpast,:,:));
+
+leftpasttrialsonly2 = squeeze(mean(leftpasttrialsonly));
+
+%%
+leftWheelMap = leftpasttrialsonly2;
+rightWheelMap = rightpasttrialsonly2;
+centerWheelMap = centerpasttrialsonly2;
+centertoleftwheelmap = centertolefttrialsonly2;
+centertorightwheelmap = centertorighttrialsonly2;
+%%
+clearvars -except leftWheelMap rightWheelMap centerWheelMap centertoleftwheelmap centertorightwheelmap
+
+%save('wheelmaps80ms.mat')
+
+%  save('wheelmaps125ms.mat')
+
+ save('wheelmaps125msV4.mat')
+
+% clearvars -except leftWheelMap rightWheelMap centerWheelMap
+% 
+% save('wheelmaps125mscorronly.mat')
+
+%% generate 10map ripple images
+
+%playing need to make new ripple detector that is faster perhaps? or
+%reverse the ripple markers back to Spike.res time
+clear all
+load rec01_BehavElectrDataLFP Spike Track Laps Clu
+load('spwSpikes2.mat')
+load('wheelmaps125ms.mat')
+load('sixmaps_SM_60_bin_10_spd_50.mat') 
+load placefieldmaps_sm100_bin06_spd50
+
+
+%%
+ %binlengthR = 64;
+%binlengthR = 65; %4artietest
+ binlengthR = size(leftWheelMap,2) - 1;
+leftwheelmapsR = leftWheelMap(:,1:binlengthR);
+centerwheelmapsR = centerWheelMap(:,1:binlengthR);
+rightwheelmapsR = rightWheelMap(:,1:binlengthR);
+
+
+
+allwheelmapsR = cat(2,leftwheelmapsR,centerwheelmapsR,rightwheelmapsR);
+
+% binlength = 52;
+ binlength = size(sixfieldmaps,3); %4artietest
+
+leftarmIN = squeeze(sixfieldmaps(:,1,:));
+leftarmOUT = squeeze(sixfieldmaps(:,2,:));
+centerarmIN = squeeze(sixfieldmaps(:,3,:));
+centerarmOUT = squeeze(sixfieldmaps(:,4,:));
+rightarmIN= squeeze(sixfieldmaps(:,5,:));
+rightarmOUT = squeeze(sixfieldmaps(:,6,:));
+% binlength = size(leftarmIN,2) -1;
+
+
+mapnames = {'leftwheelmapsR'; 'centerwheelmapsR';'rightwheelmapsR';'leftarmOUT'; ...
+    'leftarmIN';'centerarmOUT';'centerarmIN'; 'rightarmOUT'; 'rightarmIN';};
+mapnameshort = {'LW';'CW';'RW';'LO';'LI';'CO';'CI';'RO';'RI';};
+
+allarmmaps = cat(2,leftarmOUT,leftarmIN,centerarmOUT,centerarmIN,rightarmOUT,rightarmIN);
+
+
+
+%%
+mkdir tenmaprippletestfastClean5
+cd tenmaprippletestfastClean5/
+tic
+%%
+%for trial = 44
+for trial = 1:length(spwSpikes)
+    clear spikesperbin testhold peaktrX peaktrY
+    testhold = spwSpikes(trial,:);
+    numripples = find(~cellfun('isempty',testhold));
+    if ~isempty(numripples)
+        for j = 1:length(numripples)
+            %for j = 8
+            
+            spikesperbin = testhold{1,j};
+            tbin = 0.010;
+%             
+%             % remove the interneurons from all maps and spikebins
+%             spikesperbin(find(Clu.isIntern(1:length(Clu.shank(Clu.shank<32)))),:) = 0;
+%             placefieldmaps(find(Clu.isIntern(1:length(Clu.shank(Clu.shank<32)))),:) = 0;
+%             for mapnm = 1:9
+%                 eval(sprintf('%s(find(Clu.isIntern(1:length(Clu.shank(Clu.shank<32)))),:) = 0;',mapnames{mapnm}));
+%             end
+%             
+%             %placefieldmaps(find(Clu.isIntern(1:length(Clu.shank(Clu.shank<32)))),:) = 0;
+%             allarmmaps(find(Clu.isIntern(1:length(Clu.shank(Clu.shank<32)))),:) = 0;
+%             allwheelmapsR(find(Clu.isIntern(1:length(Clu.shank(Clu.shank<32)))),:) = 0;
+%             
+
+
+
+%             % remove mpfc spikes and maps
+%           
+%              
+%              
+%             spikesperbin(find(Clu.shank<32,1,'last'):end,:) = 0;
+%             placefieldmaps(find(Clu.shank<32,1,'last'):end,:) = 0;
+%             allarmmaps(find(Clu.shank<32,1,'last'):end,:) = 0;
+%             allwheelmapsR(find(Clu.shank<32,1,'last'):end,:) = 0;
+            
+             % 
+             % spikesperbin(find(Clu.shank<8),:) = 0; %special case for artie
+             % spikesperbin(find(Clu.shank>20),:) = 0;  %special case for artie
+             % placefieldmaps(find(Clu.shank<8),:) = 0;   %special case for artie
+             % placefieldmaps(find(Clu.shank>20),:) = 0;  %special case for artie
+             % allarmmaps(find(Clu.shank<8),:) = 0;   %special case for artie
+             % allarmmaps(find(Clu.shank>20),:) = 0;  %special case for artie
+             % allwheelmapsR(find(Clu.shank<8),:) = 0;   %special case for artie
+             % allwheelmapsR(find(Clu.shank>20),:) = 0;  %special case for artie
+             % 
+             
+             
+%              
+%             for mapnm = 1:9
+%                 eval(sprintf('%s(find(Clu.shank<32,1,''last''):end,:) = 0;',mapnames{mapnm}));
+%             end
+%             
+            
+            
+            
+            [e r] = size(spikesperbin);
+            totalcellsactiveperbin = sum(spikesperbin);
+            frthresh = 3;
+            
+            for mapnm = 1:9
+                logpfmaps = []; sumpfmaps = [];  ppost = []; ppost_norm = [];
+                
+                eval(sprintf('logpfmaps = log(%s*tbin);',mapnames{mapnm}));
+                logpfmaps(find(logpfmaps == -Inf)) = -450;
+                eval(sprintf('sumpfmaps = tbin*sum(%s);',mapnames{mapnm}));
+                firstlook = spikesperbin' * logpfmaps -repmat(sumpfmaps,r,1);
+                ppost = exp(firstlook);
+                ppost_norm = bsxfun(@times, ppost, 1./sum(ppost,2));
+                if ismember(mapnm,[1 2 3])
+                    
+                    eval(sprintf('decode%s = reshape(ppost_norm,r,1,binlengthR);',mapnames{mapnm}));
+                else
+                    eval(sprintf('decode%s = reshape(ppost_norm,r,1,binlength);',mapnames{mapnm}));
+                end
+                
+                eval(sprintf('decode%s(find(totalcellsactiveperbin<frthresh),:,:) = 0;',mapnames{mapnm}));
+                
+                eval(sprintf('decodeF%s = squeeze(decode%s(:,1,:));',mapnames{mapnm},mapnames{mapnm}));
+                
+                
+            end
+            
+            
+            logpfmaps = []; sumpfmaps = [];  ppost = []; ppost_norm = [];
+            logpfmaps = log(allarmmaps*tbin);
+            logpfmaps(find(logpfmaps == -Inf)) = -450;
+            sumpfmaps = tbin*sum(allarmmaps);
+            firstlook = spikesperbin' * logpfmaps -repmat(sumpfmaps,r,1);
+            ppost = exp(firstlook);
+            ppost_norm = bsxfun(@times, ppost, 1./sum(ppost,2));
+            firstlooktranslateAllArms = reshape(ppost_norm,r,1,binlength*6);
+            
+            logpfmaps = []; sumpfmaps = [];  ppost = []; ppost_norm = [];
+            logpfmaps = log(allwheelmapsR*tbin);
+            logpfmaps(find(logpfmaps == -Inf)) = -450;
+            sumpfmaps = tbin*sum(allwheelmapsR);
+            firstlook = spikesperbin' * logpfmaps -repmat(sumpfmaps,r,1);
+            ppost = exp(firstlook);
+            ppost_norm = bsxfun(@times, ppost, 1./sum(ppost,2));
+            firstlooktranslateAllWheelR = reshape(ppost_norm,r,1,binlengthR *3);
+            
+            
+            firstlooktranslateAllArms(find(totalcellsactiveperbin<frthresh),:,:) = 0;
+            firstlooktranslateAllWheelR(find(totalcellsactiveperbin<frthresh),:,:) = 0;
+            
+            
+            
+            [Xsyze Ysyze] = size(binnedFR);
+            logpfmaps = []; sumpfmaps = [];  ppost = []; ppost_norm = [];
+            [e r] = size(spikesperbin);
+            logpfmaps = log(placefieldmaps*tbin);
+            logpfmaps(find(logpfmaps == -Inf)) = -450;
+            sumpfmaps = tbin*sum(placefieldmaps);
+            firstlook = spikesperbin' * logpfmaps -repmat(sumpfmaps,r,1);
+            ppost = exp(firstlook);
+            ppost_norm = bsxfun(@times, ppost, 1./sum(ppost,2));
+            translated2dMap = reshape(ppost_norm,r,Xsyze,Ysyze);
+            
+            clear peaktrX peaktrY
+            for frame = 1:r
+                tofindpeak = [];
+                clear xcoord
+                clear ycoord
+                tofindpeak = squeeze(translated2dMap(frame,:,:))';
+                [f xcoord] = max(max(tofindpeak));
+                [f ycoord] = max(max(tofindpeak'));
+                peaktrX(frame) = xcoord;
+                peaktrY(frame) = ycoord;
+            end
+            
+            
+            
+            
+            conCatArms = squeeze(firstlooktranslateAllArms(:,1,:));
+            conCatWheels = squeeze(firstlooktranslateAllWheelR(:,1,:));
+            
+            
+            sixmapline = 1:binlength:(binlength*6)+1;
+            threemapline = 1:binlengthR:(binlengthR*3)+1;
+            
+            for h = 1:6
+                [AmpCat IndexCat] = max(conCatArms(:,sixmapline(h):sixmapline(h+1)-1)');
+                
+                IndexCatCut = IndexCat(IndexCat>1 & AmpCat>1/(binlength*6)*5);
+                
+                
+                x = IndexCatCut;
+                y = 1:length(IndexCatCut);
+                
+                [corval pval] =  corrcoef(x,y);
+                if length(corval)==1
+                    concatcorval(h+3) = 0;
+                else
+                    concatcorval(h+3) = corval(2);
+                end
+            end
+            
+            
+            for h = 1:3
+                [AmpCat IndexCat] = max(conCatWheels(:,threemapline(h):threemapline(h+1)-1)');
+                IndexCatCut = IndexCat(IndexCat>1 & AmpCat>1/(binlengthR*3)*5);
+                
+                x = IndexCatCut;
+                y = 1:length(IndexCatCut);
+                [corval pval] =  corrcoef(x,y);
+                if length(corval)==1
+                    concatcorval(h) = 0;
+                else
+                    concatcorval(h) = corval(2);
+                end
+                
+            end
+            
+            
+            
+            
+            
+            %%
+            
+            %             figure('position', [20,20,1000,200]);
+            figure;
+            
+            %             for mapnm = 1:9
+            %                 subplot(2,12,mapnm)
+            %                 eval(sprintf('imagesc(decodeF%s);',mapnames{mapnm}));
+            %                 eval(sprintf('[A I] = max(decodeF%s'');',mapnames{mapnm}));
+            %                 % this is to make sure and not count any empty spaces that
+            %                 %give max =1;
+            %                 I2 = I(I>1);
+            %                 x = I2(1:end);
+            %                 y = 1:length(I2);
+            %                 [corval pval] =  corrcoef(x,y);
+            %                 if length(corval)==1
+            %                     eval(sprintf('title([''%s= %.3f'']);',mapnameshort{mapnm},0));
+            %                 else
+            %                     eval(sprintf('title([''%s= %.3f'']);',mapnameshort{mapnm},corval(2)));
+            %                 end
+            %                 %title(num2str(corval));
+            %                 %                 eval(sprintf('title([''%s= %.3f'']);',mapnameshort{mapnm},corval(2)));
+            %                 colormap(bone)
+            %                 set(gcf,'position', [10,700,1400,300])
+            %                 set(gca,'Yticklabel',[])
+            %                 set(gca,'Xticklabel',[])
+            %             end
+            set(gcf,'position', [10,700,1400,300])
+            %
+            subplot(2,12,[1:3 13:15])
+            imagesc(conCatWheels);
+            colormap(bone)
+            hold on;
+            linesholdw = binlengthR:binlengthR:binlengthR*3;
+            line([linesholdw(1)+.5 linesholdw(1)+.5],[0 size(conCatWheels,1)],[1 1],'Color','c','LineStyle',':')
+            line([linesholdw(2)+.5 linesholdw(2)+.5],[0 size(conCatWheels,1)],[1 1],'Color','c','LineStyle',':')
+            %title([num2str(concatcorval(1)) '    ' num2str(concatcorval(2)) '    ' num2str(concatcorval(3))]);
+            names = {'Left Wheel'; 'Center Wheel'; 'Right Wheel';};
+            set(gca,'xtick',[25 90 150],'xticklabel',names)
+            title(sprintf('%.3f                    %.3f                    %.3f ',concatcorval(1),concatcorval(2),concatcorval(3)));
+            
+            subplot(2,12,[4:9 16:21]);
+            imagesc(conCatArms);
+            hold on;
+            lineshold = binlength:binlength:binlength*6;
+            
+            line([lineshold(1)+.5 lineshold(1)+.5],[0 size(conCatArms,1)],[1 1],'Color','c','LineStyle',':')
+            line([lineshold(2)+.5 lineshold(2)+.5],[0 size(conCatArms,1)],[1 1],'Color','c','LineStyle',':')
+            line([lineshold(3)+.5 lineshold(3)+.5],[0 size(conCatArms,1)],[1 1],'Color','c','LineStyle',':')
+            line([lineshold(4)+.5 lineshold(4)+.5],[0 size(conCatArms,1)],[1 1],'Color','c','LineStyle',':')
+            line([lineshold(5)+.5 lineshold(5)+.5],[0 size(conCatArms,1)],[1 1],'Color','c','LineStyle',':')
+            title(sprintf('%.3f                     %.3f                     %.3f                     %.3f                     %.3f                     %.3f',concatcorval(4),concatcorval(5),concatcorval(6),concatcorval(7),concatcorval(8),concatcorval(9) ));
+            names2 = {'Left OUT';'Left IN';'Center OUT';'Center IN'; 'Right OUT'; 'Right IN';};
+            set(gca,'xtick',[20 75 130 180 230 285],'xticklabel',names2)
+            
+            subplot(2,12,[22:23])
+            blankfig = ones(size(binnedFR,2),size(binnedFR,1));
+            imagesc(blankfig)
+            colormap(bone)
+            hold on;
+            plot(polypositions(:,1),polypositions(:,2),'w','LineWidth',2)
+            hold on
+            tempmap = jet(length(peaktrX));
+            for step = 1:length(peaktrX)
+                
+                plot(peaktrX(1,step),peaktrY(1,step),'o','color',tempmap(step,:),'MarkerFaceColor',tempmap(step,:));
+                hold on
+            end
+            
+            
+            set(gca,'Yticklabel',[])
+            set(gca,'Xticklabel',[])
+            
+            %past trajectory
+            if trial>1
+                subplot(2,12,10)
+                plot(Track.xPix(1:100:end),Track.yPix(1:100:end), 'Color', [0.6 0.6 0.6]);
+                set(gca, 'XTick', []);
+                set(gca, 'YTick', []);
+                hold on;
+                if ~ismember((trial-1),find(Laps.corrChoice));
+                    plot(Track.xPix(Track.lapID ==(trial-1)),Track.yPix(Track.lapID ==(trial-1)), 'Color', [1 0.5 0]);
+                    set(gca, 'XTick', []);
+                    set(gca, 'YTick', []);
+                    hold on;
+                    xlim([0 max(Track.xPix(1:100:end))])
+                    ylim([0 max(Track.yPix(1:100:end))])
+                    
+                else
+                    plot(Track.xPix(Track.lapID ==(trial-1)),Track.yPix(Track.lapID ==(trial-1)), 'Color', [0 0 1]);
+                    set(gca, 'XTick', []);
+                    set(gca, 'YTick', []);
+                    hold on;
+                   xlim([0 max(Track.xPix(1:100:end))])
+                    ylim([0 max(Track.yPix(1:100:end))])
+                    
+                end
+                axis ij
+                title('Past');
+            else
+            end
+            
+            
+            subplot(2,12,11)
+            plot(Track.xPix(1:100:end),Track.yPix(1:100:end), 'Color', [0.6 0.6 0.6]);
+            set(gca, 'XTick', []);
+            set(gca, 'YTick', []);
+            hold on;
+            if ~ismember(trial,find(Laps.corrChoice));
+                plot(Track.xPix(Track.lapID ==trial),Track.yPix(Track.lapID ==trial), 'Color', [1 0.5 0]);
+                set(gca, 'XTick', []);
+                set(gca, 'YTick', []);
+                %                 hold on;
+                xlim([0 max(Track.xPix(1:100:end))])
+                    ylim([0 max(Track.yPix(1:100:end))])
+                hold on;
+                
+            else
+                plot(Track.xPix(Track.lapID ==trial),Track.yPix(Track.lapID ==trial), 'Color', [0 0 1]);
+                set(gca, 'XTick', []);
+                set(gca, 'YTick', []);
+                %                 hold on;
+                xlim([0 max(Track.xPix(1:100:end))])
+                    ylim([0 max(Track.yPix(1:100:end))])
+                hold on;
+                
+            end
+            
+            if Laps.dirChoice(trial) ==1
+                plot(520,68,'ro','MarkerSize',8,'MarkerFaceColor','r');
+            elseif Laps.dirChoice(trial) ==3
+                plot(540,175,'ro','MarkerSize',8,'MarkerFaceColor','r');
+            elseif Laps.dirChoice(trial) ==2;
+                plot(550,290,'ro','MarkerSize',8,'MarkerFaceColor','r');
+            end
+            
+            
+            
+            axis ij
+            title('Current');
+            
+            
+            
+            if trial<length(Laps.lapID)
+                subplot(2,12,12)
+                xTr = Track.xPix(Track.xPix>1 & Track.yPix>1);
+                yTr = Track.yPix(Track.xPix>1 & Track.yPix>1);
+                plot(xTr(1:100:end),yTr(1:100:end), 'Color', [0.6 0.6 0.6]);
+                set(gca, 'XTick', []);
+                set(gca, 'YTick', []);
+                hold on;
+                if ~ismember((trial+1),find(Laps.corrChoice));
+                    plot(Track.xPix(Track.lapID ==(trial+1)),Track.yPix(Track.lapID ==(trial+1)), 'Color', [1 0.5 0]);
+                    set(gca, 'XTick', []);
+                    set(gca, 'YTick', []);
+                    xlim([0 max(Track.xPix(1:100:end))])
+                    ylim([0 max(Track.yPix(1:100:end))])
+                    hold on;
+                    
+                else
+                    plot(Track.xPix(Track.lapID ==(trial+1)),Track.yPix(Track.lapID ==(trial+1)), 'Color', [0 0 1]);
+                    set(gca, 'XTick', []);
+                    set(gca, 'YTick', []);
+                    xlim([0 max(Track.xPix(1:100:end))])
+                    ylim([0 max(Track.yPix(1:100:end))])
+                    
+                    hold on;
+                    
+                end
+                axis ij
+                title('Future');
+            else
+            end
+            
+            subplot(2,12,24)
+            blankfig = ones(size(binnedFR,2),size(binnedFR,1));
+            imagesc(blankfig)
+            colormap(bone)
+            hold on
+            text(2,8,sprintf('trial # %s',num2str(trial)),'Color','white','FontSize',10,'FontWeight','bold')
+            %text(2,20,sprintf('trl rpl # %s',num2str(subripplecounter)),'Color','white','FontSize',10,'FontWeight','bold')
+            text(2,20,sprintf('ripple # %s',num2str(j)),'Color','white','FontSize',10,'FontWeight','bold')
+            
+            set(gca, 'XTick', []);
+            set(gca, 'YTick', []);
+            
+            
+            
+            set(gcf,'PaperPositionMode','auto')
+            saveas(gcf,sprintf('TenMapRpltrl%02dspw%02d.jpg',trial,j));
+            close
+            
+        end
+    end
+end
+toc
+
+
+%% make ripple list in biglist format
+cd ..
+%%
+%playing need to make new ripple detector that is faster perhaps? or
+%reverse the ripple markers back to Spike.res time
+clear all
+load rec01_BehavElectrDataLFP Spike Track Laps Clu
+load('spwSpikes2.mat')
+ load('wheelmaps125ms.mat')
+
+load('sixmaps_SM_60_bin_10_spd_50.mat')
+load placefieldmaps_sm100_bin06_spd50
+spwSpikesflp = spwSpikes';
+biglist = spwSpikesflp(find(~cellfun('isempty',spwSpikesflp)));
+%%
+binlengthR = 64;
+leftwheelmapsR = leftWheelMap(:,1:binlengthR);
+centerwheelmapsR = centerWheelMap(:,1:binlengthR);
+rightwheelmapsR = rightWheelMap(:,1:binlengthR);
+
+allwheelmapsR = cat(2,leftwheelmapsR,centerwheelmapsR,rightwheelmapsR);
+binlength = 51;
+leftwheelmaps = squeeze(sixfieldmaps(:,2,:));
+centerwheelmaps =  squeeze(sixfieldmaps(:,4,:));
+rightwheelmaps = squeeze(sixfieldmaps(:,6,:));
+leftwheelmapsin = squeeze(sixfieldmaps(:,1,:));
+centerwheelmapsin = squeeze(sixfieldmaps(:,3,:));
+rightwheelmapsin  = squeeze(sixfieldmaps(:,5,:));
+
+
+allwheelmaps = cat(2,leftwheelmaps,leftwheelmapsin,centerwheelmaps,centerwheelmapsin,rightwheelmaps,rightwheelmapsin);
+
+mapnames = {'leftwheelmapsRp'; 'centerwheelmapsRp';'rightwheelmapsRp';'leftarmOUT'; ...
+    'leftarmIN';'centerarmOUT';'centerarmIN'; 'rightarmOUT'; 'rightarmIN';};
+mapnameshort = {'LW';'CW';'RW';'LO';'LI';'CO';'CI';'RO';'RI';};
+
+
+%%
+
+tic
+
+
+for j = 1:length(biglist)
+    
+    spikesperbin = biglist{j};
+    tbin = 0.020;
+    
+%     spikesperbin(find(Clu.isIntern(1:length(Clu.shank(Clu.shank<32)))),:) = 0;
+%     placefieldmaps(find(Clu.isIntern(1:length(Clu.shank(Clu.shank<32)))),:) = 0;
+%     allwheelmaps(find(Clu.isIntern(1:length(Clu.shank(Clu.shank<32)))),:) = 0;
+%     allwheelmapsR(find(Clu.isIntern(1:length(Clu.shank(Clu.shank<32)))),:) = 0;
+%     
+%     
+%     
+%     spikesperbin(find(Clu.shank<32,1,'last'):end,:) = 0;
+%     placefieldmaps(find(Clu.shank<32,1,'last'):end,:) = 0;
+%     allwheelmaps(find(Clu.shank<32,1,'last'):end,:) = 0;
+%     allwheelmapsR(find(Clu.shank<32,1,'last'):end,:) = 0;
+
+
+spikesperbin(find(Clu.isIntern),:) = 0;
+placefieldmaps(find(Clu.isIntern),:) = 0;
+allwheelmaps(find(Clu.isIntern),:) = 0;
+allwheelmapsR(find(Clu.isIntern),:) = 0;
+
+
+
+            spikesperbin(find(Clu.shank<8),:) = 0; %special case for artie
+             spikesperbin(find(Clu.shank>20),:) = 0;  %special case for artie
+             placefieldmaps(find(Clu.shank<8),:) = 0;   %special case for artie
+             placefieldmaps(find(Clu.shank>20),:) = 0;  %special case for artie
+             allarmmaps(find(Clu.shank<8),:) = 0;   %special case for artie
+             allarmmaps(find(Clu.shank>20),:) = 0;  %special case for artie
+             allwheelmapsR(find(Clu.shank<8),:) = 0;   %special case for artie
+             allwheelmapsR(find(Clu.shank>20),:) = 0;  %special case for artie
+%     
+    
+    [e r] = size(spikesperbin);
+    
+    
+    
+    logpfmaps = [];
+    sumpfmaps = [];
+    ppost = [];
+    ppost_norm = [];
+    
+    logpfmaps = log(allwheelmaps*tbin);
+    logpfmaps(find(logpfmaps == -Inf)) = -450;
+    sumpfmaps = tbin*sum(allwheelmaps);
+    firstlook = spikesperbin' * logpfmaps -repmat(sumpfmaps,r,1);
+    ppost = exp(firstlook);
+    ppost_norm = bsxfun(@times, ppost, 1./sum(ppost,2));
+    firstlooktranslateAllWheel = reshape(ppost_norm,r,1,binlength*6);
+    
+    
+    
+    logpfmaps = [];
+    sumpfmaps = [];
+    ppost = [];
+    ppost_norm = [];
+    
+    logpfmaps = log(allwheelmapsR*tbin);
+    logpfmaps(find(logpfmaps == -Inf)) = -450;
+    sumpfmaps = tbin*sum(allwheelmapsR);
+    firstlook = spikesperbin' * logpfmaps -repmat(sumpfmaps,r,1);
+    ppost = exp(firstlook);
+    ppost_norm = bsxfun(@times, ppost, 1./sum(ppost,2));
+    firstlooktranslateAllWheelR = reshape(ppost_norm,r,1,binlengthR *3);
+    
+    
+    [Xsyze Ysyze] = size(binnedFR);
+    logpfmaps = []; sumpfmaps = [];  ppost = []; ppost_norm = [];
+    [e r] = size(spikesperbin);
+    logpfmaps = log(placefieldmaps*tbin);
+    logpfmaps(find(logpfmaps == -Inf)) = -450;
+    sumpfmaps = tbin*sum(placefieldmaps);
+    firstlook = spikesperbin' * logpfmaps -repmat(sumpfmaps,r,1);
+    ppost = exp(firstlook);
+    ppost_norm = bsxfun(@times, ppost, 1./sum(ppost,2));
+    translated2dMap = reshape(ppost_norm,r,Xsyze,Ysyze);
+    
+    
+    
+    totalcellsactiveperbin = sum(spikesperbin);
+    
+    
+    
+    %fr threshold for decoder
+    frthresh = 3;
+    
+    
+    translated2dMap(find(totalcellsactiveperbin<frthresh),:,:) = 0;
+    
+    clear peaktrX peaktrY
+    for frame = 1:r
+        tofindpeak = [];
+        clear xcoord
+        clear ycoord
+        tofindpeak = squeeze(translated2dMap(frame,:,:))';
+        [f xcoord] = max(max(tofindpeak));
+        [f ycoord] = max(max(tofindpeak'));
+        peaktrX(frame) = xcoord;
+        peaktrY(frame) = ycoord;
+    end
+    
+    bigHold2d{j}(:,1) = peaktrX;
+     bigHold2d{j}(:,2) = peaktrY;
+    
+    totalcellsactiveperbin = sum(spikesperbin);
+    
+    
+    
+    %fr threshold for decoder
+    frthresh = 3;
+    
+    firstlooktranslateAllWheel(find(totalcellsactiveperbin<frthresh),:,:) = 0;
+    firstlooktranslateAllWheelR(find(totalcellsactiveperbin<frthresh),:,:) = 0;
+    
+    newwytest1 = squeeze(firstlooktranslateAllWheel(:,1,:));
+    
+    newwytest2 = squeeze(firstlooktranslateAllWheelR(:,1,:));
+    
+    
+    sixmapline = 1:binlength:(binlength*6)+1;
+    threemapline = 1:binlengthR:(binlengthR*3)+1 ;
+    
+    
+    for h = 1:6
+        bigHold{j,h+3} = newwytest1(:,sixmapline(h):sixmapline(h+1)-1);
+        
+        
+    end
+    
+    
+    for h = 1:3
+        bigHold{j,h} = newwytest2(:,threemapline(h):threemapline(h+1)-1);
+        
+    end
+    
+    
+    
+end
+
+toc
+
+clearvars -except bigHold bigHold2d
+
+save('bigHold3.mat')
+
+
