@@ -1,0 +1,458 @@
+
+clear all
+load('rec01_BehavElectrDataLFP.mat')
+
+%%
+clear all
+
+load('rec01_BehavElectrDataLFPCuratedIOLinearSnap3.mat')
+% mild fix for lucky10_10 - will run - check and save Track.dirChoice(1:129554) = 3;.
+% mild fix for lucky10_15 Laps.dirChoice(1) = 3; max(find(Track.lapID ==1)), Track.dirChoice(1:108220) = 3;
+%%
+figure('Position',[30 547 1150 420]) 
+subplot(1,2,1)
+
+scatter(Track.xPix(Track.inbound ==1),Track.yPix(Track.inbound ==1))
+hold on
+scatter(Track.xPix(Track.outbound ==1),Track.yPix(Track.outbound ==1))
+    axis ij
+title('old')
+    %
+
+    load("inoutmarkerstest2.mat")
+
+    % if it runs and looks good then inout was already adjusted for laps... if not then
+    % rerun with this added
+
+% 
+for loopnum = 1:size(Laps.lapID,1)
+    inbound(loopnum,1) = inbound(loopnum,1) + Laps.startLfpInd(loopnum)-1;
+    inbound(loopnum,2) = inbound(loopnum,2) + Laps.startLfpInd(loopnum)-1;
+
+    outbound(loopnum,1) = outbound(loopnum,1) + Laps.startLfpInd(loopnum)-1;
+    outbound(loopnum,2) = outbound(loopnum,2) + Laps.startLfpInd(loopnum)-1;
+
+
+    % inbound(loopnum,1) = inbound(loopnum,1) + Laps.startLfpInd(loopnum);
+    % inbound(loopnum,2) = inbound(loopnum,2) + Laps.startLfpInd(loopnum);
+    % 
+    % outbound(loopnum,1) = outbound(loopnum,1) + Laps.startLfpInd(loopnum);
+    % outbound(loopnum,2) = outbound(loopnum,2) + Laps.startLfpInd(loopnum);
+
+end
+
+%
+Track.inbound = zeros(size(Track.xPix,1),1);
+Track.outbound = zeros(size(Track.xPix,1),1);
+
+for loopnum = 1:size(Laps.lapID,1);
+    Track.inbound(inbound(loopnum,1):inbound(loopnum,2)) = 1;
+    Track.outbound(outbound(loopnum,1):outbound(loopnum,2)) = 1;
+end
+
+
+% make spike.inbound and outbound structures
+Spike.inbound = zeros(size(Spike.res,1),1);
+Spike.outbound = zeros(size(Spike.res,1),1);
+
+for j = 1:size(Spike.res,1)
+    
+    if Track.inbound(Spike.res(j)) == 1;
+        Spike.inbound(j) =1;
+    else
+        Spike.inbound(j) = 0;
+    end
+    
+     if Track.outbound(Spike.res(j)) == 1;
+        Spike.outbound(j) =1;
+    else
+        Spike.outbound(j) = 0;
+     end
+end
+
+%
+gcf
+subplot(1,2,2);
+scatter(Track.xPix(Track.inbound ==1),Track.yPix(Track.inbound ==1))
+hold on
+ scatter(Track.xPix(Track.outbound ==1),Track.yPix(Track.outbound ==1))
+ axis ij
+ title('new')
+
+ %%
+ Track.oldlinLinesLeftArm = Track.linLinesLeftArm;
+Track.oldlinLinesCenterArm = Track.linLinesCenterArm;
+Track.oldlinLinesRightArm = Track.linLinesRightArm;
+
+
+ Track = rmfield(Track,{'linLinesLeftArm','linLinesCenterArm','linLinesRightArm'}); 
+
+ %%
+    xTrIO = Track.xPix(Track.xPix > 0 & Track.yPix > 0 & (Track.inbound ==1 |Track.outbound ==1));
+    yTrIO = Track.yPix(Track.xPix > 0 & Track.yPix > 0 & (Track.inbound ==1 |Track.outbound ==1));
+    
+
+    xTrIOL = Track.xPix(Track.xPix > 0 & Track.yPix > 0 & (Track.inbound ==1 |Track.outbound ==1) & Track.dirChoice == 1);
+    yTrIOL = Track.yPix(Track.xPix > 0 & Track.yPix > 0 & (Track.inbound ==1 |Track.outbound ==1) & Track.dirChoice  == 1);
+    
+    xTrIOC = Track.xPix(Track.xPix > 0 & Track.yPix > 0 & (Track.inbound ==1 |Track.outbound ==1) & Track.dirChoice == 3);
+    yTrIOC = Track.yPix(Track.xPix > 0 & Track.yPix > 0 & (Track.inbound ==1 |Track.outbound ==1) & Track.dirChoice  == 3);
+    
+    xTrIOR = Track.xPix(Track.xPix > 0 & Track.yPix > 0 & (Track.inbound ==1 |Track.outbound ==1) & Track.dirChoice == 2);
+    yTrIOR = Track.yPix(Track.xPix > 0 & Track.yPix > 0 & (Track.inbound ==1 |Track.outbound ==1) & Track.dirChoice  == 2);
+    
+
+   
+
+    figure('Position',[215 148 1312 866]);
+    
+    plot(xTrIOL,yTrIOL,'.')
+    hold on
+    plot(xTrIOC,yTrIOC,'.')
+    hold on
+    plot(xTrIOR,yTrIOR,'.')
+    plot(xTrIOL,yTrIOL,'.','Color','k')
+    hold on
+    axis ij
+    hold on
+    title('left arm line');
+    la = impoly;
+    leftarm = getPosition(la);
+    hold on
+    leftx2 = interp(leftarm(:,1),50);
+    lefty2 = interp(leftarm(:,2),50);
+    hold on
+    plot(xTrIOL,yTrIOL,'.')
+    hold on
+    plot(xTrIOC,yTrIOC,'.')
+    hold on
+    plot(xTrIOR,yTrIOR,'.')
+    plot(leftx2,lefty2,'LineWidth',2,'color','r')
+    plot(xTrIOR,yTrIOR,'.','Color','k')
+    title('right arm line');
+    ra = impoly;
+    rightarm = getPosition(ra);
+    hold on
+    rightx2 = interp(rightarm(:,1),50);
+    righty2 = interp(rightarm(:,2),50);
+    hold on
+    plot(xTrIOL,yTrIOL,'.')
+    hold on
+    plot(xTrIOC,yTrIOC,'.')
+    hold on
+    plot(xTrIOR,yTrIOR,'.')
+    plot(leftx2,lefty2,'LineWidth',2,'color','r')
+    plot(rightx2,righty2,'LineWidth',2,'color','c')
+    plot(xTrIOC,yTrIOC,'.','Color','k')
+    title('center arm line');
+    ca = impoly;
+    centerarm = getPosition(ca);
+    hold on
+    centerx2 = interp(centerarm(:,1),50);
+    centery2 = interp(centerarm(:,2),50);
+     hold on
+    plot(xTrIOL,yTrIOL,'.')
+    hold on
+    plot(xTrIOC,yTrIOC,'.')
+    hold on
+    plot(xTrIOR,yTrIOR,'.')
+    plot(centerx2,centery2,'LineWidth',2,'color','g')
+    plot(leftx2,lefty2,'LineWidth',2,'color','r')
+    plot(rightx2,righty2,'LineWidth',2,'color','c')
+
+    title('make end cutoff line')
+    cutoff = imline;
+    wait(cutoff);
+    cutoffpos = round(mean(getPosition(cutoff)));
+    cutoffval = cutoffpos(1);
+    
+    leftx2 = leftx2(leftx2<cutoffval);
+    lefty2 = lefty2(leftx2<cutoffval);
+    
+    centerx2 = centerx2(centerx2<cutoffval);
+    centery2 = centery2(centerx2<cutoffval);
+    
+    rightx2 = rightx2(rightx2<cutoffval);
+    righty2 = righty2(rightx2<cutoffval);
+    
+    
+    [pt] = interparc(500,leftx2,lefty2);
+    [ct] = interparc(500,centerx2,centery2);
+    [rt] = interparc(500,rightx2,righty2);
+    
+    clf;
+   
+    plot(xTrIO,yTrIO,'.')
+    axis ij
+    hold on
+    plot(rt(:,1),rt(:,2),'LineWidth',2,'color','c')
+    hold on;
+    plot(ct(:,1),ct(:,2),'LineWidth',2,'color','g')
+    hold on;
+    plot(pt(:,1),pt(:,2),'LineWidth',2,'color','r')
+
+    Track.linLinesLeftArm = pt;
+    Track.linLinesCenterArm = ct;
+    Track.linLinesRightArm = rt;
+    
+    %% curve length calculator
+
+% Example: x and y coordinates of a curved line (could be any curve)
+x = Track.linLinesLeftArm(:,1);  % Replace with your x coordinates
+y = Track.linLinesLeftArm(:,2);  % Replace with your y coordinates
+
+% Calculate the differences between consecutive points
+dx = diff(x);  % Differences in x
+dy = diff(y);  % Differences in y
+
+% Calculate the Euclidean distance between each consecutive point
+distances = sqrt(dx.^2 + dy.^2);
+
+% Calculate the total length of the curve by summing the distances
+curve_length = sum(distances);
+
+disp('   ');
+% Display the result
+disp(['The length of the left arm curve is: ', num2str(curve_length)]);
+curve_lengthleft = curve_length;
+
+% Example: x and y coordinates of a curved line (could be any curve)
+x = Track.linLinesCenterArm(:,1);  % Replace with your x coordinates
+y = Track.linLinesCenterArm(:,2);  % Replace with your y coordinates
+
+% Calculate the differences between consecutive points
+dx = diff(x);  % Differences in x
+dy = diff(y);  % Differences in y
+
+% Calculate the Euclidean distance between each consecutive point
+distances = sqrt(dx.^2 + dy.^2);
+
+% Calculate the total length of the curve by summing the distances
+curve_length = sum(distances);
+
+% Display the result
+disp(['The length of the center arm curve is: ', num2str(curve_length)]);
+curve_lengthcent = curve_length;
+
+% Example: x and y coordinates of a curved line (could be any curve)
+x = Track.linLinesRightArm(:,1);  % Replace with your x coordinates
+y = Track.linLinesRightArm(:,2);  % Replace with your y coordinates
+
+% Calculate the differences between consecutive points
+dx = diff(x);  % Differences in x
+dy = diff(y);  % Differences in y
+
+% Calculate the Euclidean distance between each consecutive point
+distances = sqrt(dx.^2 + dy.^2);
+
+% Calculate the total length of the curve by summing the distances
+curve_length = sum(distances);
+
+% Display the result
+disp(['The length of the right arm curve is: ', num2str(curve_length)]);
+curve_lengthright = curve_length;
+
+disp(['  ']);
+disp(['ratio of right / left curve = ', num2str(curve_lengthright/curve_lengthleft)  ]);
+disp(['  ']);
+disp(['ratio of left / right curve = ', num2str(curve_lengthleft/curve_lengthright)  ]);
+disp(['  ']);
+disp(['ratio of center / left curve = ', num2str(curve_lengthcent/curve_lengthleft)  ]);
+disp(['  '])
+disp(['ratio of center / right curve = ', num2str(curve_lengthcent/curve_lengthright)  ])
+
+%% adjusting center arm number of points for its length - 
+%note for 11/29 the ratio was ~0.83 this meant 500*0.83 = 415
+
+ratio1 = curve_lengthcent/curve_lengthleft;
+ratio2 = curve_lengthcent/curve_lengthright;
+
+adjustmentratio = mean([ratio1 ratio2]);
+
+adjustmenlength = round(500*adjustmentratio);
+
+% Extract x and y coordinates
+xCoords = Track.linLinesCenterArm(:, 1);
+yCoords = Track.linLinesCenterArm(:, 2);
+
+% Create the original sample points (1 to 500)
+originalPoints = linspace(1, 500, 500);
+
+% Create new sample points for 415 points
+newPoints = linspace(1, 500, adjustmenlength );
+
+% Interpolate x and y coordinates over 415 points
+newXCoords = interp1(originalPoints, xCoords, newPoints);
+newYCoords = interp1(originalPoints, yCoords, newPoints);
+
+% Combine the new coordinates into a 415 x 2 matrix
+Track.linLinesCenterArm_adj = [newXCoords', newYCoords'];
+
+
+%% NEW DOES THE SNAPPING BASED ON DIRECTION CHOICE
+
+% Define tracking data
+pt = [Track.xPix(:), Track.yPix(:)]; % Original tracking points
+dirChoice = Track.dirChoice(:); % Direction choice for each point (1 = Left, 2 = Right, 3 = Center)
+
+% Define curves as matrices where each row is an (x, y) coordinate along the curve
+leftArmCurve = Track.linLinesLeftArm;   % Left Arm curve, 500x2
+centerArmCurve = Track.linLinesCenterArm_adj; % Center Arm curve, 415x2
+rightArmCurve = Track.linLinesRightArm;  % Right Arm curve, 500x2
+
+% Initialize variables to store snapped points and line info
+xref = zeros(size(pt, 1), 1); % Snapped x-coordinates
+yref = zeros(size(pt, 1), 1); % Snapped y-coordinates
+lineSnap = zeros(size(pt, 1), 1); % Curve ID for each point (1 = Left, 2 = Center, 3 = Right)
+snapIndex = zeros(size(pt, 1), 1); % Index of closest point along the line
+
+% Loop through each tracking point
+for i = 1:size(pt, 1)
+    % Get current tracking point coordinates
+    x = pt(i, 1);
+    y = pt(i, 2);
+    
+    % Get the direction choice for the current point
+    dir = dirChoice(i);
+    
+    % Initialize variables to hold snapping results
+    closest_curve = NaN;
+    min_dist = Inf;
+    idx_closest = NaN;
+    
+    % Snap based on direction choice
+    if dir == 1
+        % Snap to Left Arm curve
+        dists = (leftArmCurve(:,1) - x).^2 + (leftArmCurve(:,2) - y).^2;
+        [min_dist, idx_closest] = min(dists);
+        closest_curve = 1;
+    elseif dir == 2
+        % Snap to Right Arm curve
+        dists = (rightArmCurve(:,1) - x).^2 + (rightArmCurve(:,2) - y).^2;
+        [min_dist, idx_closest] = min(dists);
+        closest_curve = 3;
+    elseif dir == 3
+        % Snap to Center Arm curve
+        dists = (centerArmCurve(:,1) - x).^2 + (centerArmCurve(:,2) - y).^2;
+        [min_dist, idx_closest] = min(dists);
+        closest_curve = 2;
+    end
+    
+    % Assign snapped coordinates, curve ID, and snap index
+    if closest_curve == 1
+        xref(i) = leftArmCurve(idx_closest, 1);
+        yref(i) = leftArmCurve(idx_closest, 2);
+        lineSnap(i) = 1;
+        snapIndex(i) = idx_closest; % Save index on Left Arm curve
+    elseif closest_curve == 2
+        xref(i) = centerArmCurve(idx_closest, 1);
+        yref(i) = centerArmCurve(idx_closest, 2);
+        lineSnap(i) = 2;
+        snapIndex(i) = idx_closest; % Save index on Center Arm curve
+    elseif closest_curve == 3
+        xref(i) = rightArmCurve(idx_closest, 1);
+        yref(i) = rightArmCurve(idx_closest, 2);
+        lineSnap(i) = 3;
+        snapIndex(i) = idx_closest; % Save index on Right Arm curve
+    end
+end
+
+
+% Save results in Track structure and makes the Spike structure with the
+% snap coordinates
+Track.xSnap = xref;
+Track.ySnap = yref;
+Track.lineSnap = lineSnap; % Stores which curve each point was snapped to
+Track.snapIndex = snapIndex; % Stores index of closest point along the curve
+
+% Create a copy of Track.lineSnap and apply the replacements
+Track.adjustedLineSnap = Track.lineSnap;
+
+% Replace values in adjustedLineSnap
+Track.adjustedLineSnap(Track.adjustedLineSnap == 1) = 63;
+Track.adjustedLineSnap(Track.adjustedLineSnap == 2) = 175;
+Track.adjustedLineSnap(Track.adjustedLineSnap == 3) = 280;
+
+Spike.xPixProjSNAP = Spike.xPix;
+Spike.yPixProjSNAP = Spike.yPix;
+
+
+for i = 1:length(Spike.res)
+    Spike.xPixProjSNAP(i) = Track.snapIndex(Spike.res(i));
+    Spike.yPixProjSNAP(i) = Track.adjustedLineSnap(Spike.res(i));
+end
+
+%% seeing the linear lines and then the points that snapped to each nearest line but only using the inbound/outbound curated stuff
+
+
+figure('Position',[21 349 1690 615])
+subplot(1,2,1)
+%scatter(Track.xPix,Track.yPix,'.')
+scatter(Track.xPix(Track.inbound ==1 | Track.outbound ==1),Track.yPix(Track.inbound ==1 | Track.outbound ==1),'.')
+
+
+    axis ij
+    hold on
+    plot(Track.linLinesLeftArm(:,1),Track.linLinesLeftArm(:,2),'LineWidth',2,'color','c')
+    hold on;
+    plot(Track.linLinesCenterArm(:,1),Track.linLinesCenterArm(:,2),'LineWidth',2,'color','g')
+    hold on;
+    plot(Track.linLinesRightArm(:,1),Track.linLinesRightArm(:,2),'LineWidth',2,'color','r')
+axis equal
+camroll(90)
+%title(['left =  ' num2str(curve_lengthleft) ' center = ' num2str(curve_lengthcent) ' right = ' num2str(curve_lengthright) ])
+    
+
+% Define the colors based on Track.lineSnap values
+colors = zeros(length(Track.xPix(Track.inbound ==1 | Track.outbound ==1)), 3);  % Initialize the color matrix
+
+% Assign colors based on Track.lineSnap values
+colors(Track.lineSnap(Track.inbound ==1 | Track.outbound ==1) == 1, :) = repmat([0.4 .8 .8], sum(Track.lineSnap(Track.inbound ==1 | Track.outbound ==1) == 1), 1);  % Cyan for Track.lineSnap == 1
+colors(Track.lineSnap(Track.inbound ==1 | Track.outbound ==1) == 2, :) = repmat([.4 .6 .6], sum(Track.lineSnap(Track.inbound ==1 | Track.outbound ==1) == 2), 1);  % Green for Track.lineSnap == 2
+colors(Track.lineSnap(Track.inbound ==1 | Track.outbound ==1) == 3, :) = repmat([.8 .4 .4], sum(Track.lineSnap(Track.inbound ==1 | Track.outbound ==1) == 3), 1);  % Red for Track.lineSnap == 3
+
+% Plot the points with the specified colors
+subplot(1,2,2)
+scatter(Track.xPix(Track.inbound ==1 | Track.outbound ==1), Track.yPix(Track.inbound ==1 | Track.outbound ==1), 10, colors, 'filled');  % '10' is the marker size, adjust as needed
+
+axis ij
+axis equal
+camroll(90)
+
+%%
+
+figure('Position',[21 349 1690 615])
+subplot(1,2,1)
+%scatter(Track.xPix,Track.yPix,'.')
+scatter(Track.xPix(Track.inbound ==1 | Track.outbound ==1),Track.yPix(Track.inbound ==1 | Track.outbound ==1),'.')
+
+
+    axis ij
+    hold on
+    plot(Track.linLinesLeftArm(:,1),Track.linLinesLeftArm(:,2),'LineWidth',2,'color','c')
+    hold on;
+    plot(Track.linLinesCenterArm(:,1),Track.linLinesCenterArm(:,2),'LineWidth',2,'color','g')
+    hold on;
+    plot(Track.linLinesRightArm(:,1),Track.linLinesRightArm(:,2),'LineWidth',2,'color','r')
+axis equal
+camroll(90)
+
+subplot(1,2,2)
+%scatter(Track.xPix,Track.yPix,'.')
+scatter(Track.xPix(Track.inbound ==1 | Track.outbound ==1),Track.yPix(Track.inbound ==1 | Track.outbound ==1),'.')
+
+
+    axis ij
+    hold on
+    plot(Track.linLinesLeftArm(:,1),Track.linLinesLeftArm(:,2),'LineWidth',2,'color','c')
+    hold on;
+    plot(Track.linLinesCenterArm_adj(:,1),Track.linLinesCenterArm_adj(:,2),'LineWidth',2,'color','g')
+    hold on;
+    plot(Track.linLinesRightArm(:,1),Track.linLinesRightArm(:,2),'LineWidth',2,'color','r')
+axis equal
+camroll(90)
+
+%%
+close all
+clearvars -except Clu Laps Maps Ripple Spike Track UpCr* behEvents trialMaster xml
+save('rec01_BehavElectrDataLFPCuratedIOLinearSnap4.mat')
